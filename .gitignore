@@ -1,0 +1,10 @@
+.env
+__pycache__/
+.venv/
+node_modules/
+dist/
+*.zip
+*.shp
+*.dbf
+*.shx
+*.prj
