@@ -8,3 +8,7 @@ dist/
 *.dbf
 *.shx
 *.prj
+# storage local e testes
+backend/storage/
+backend/storage_teste/
+.pytest_cache/
