@@ -1,0 +1,15 @@
+.venv
+.git*
+.pytest_cache
+__pycache__
+*.pyc
+tests
+scripts
+alembic
+alembic.ini
+storage
+storage_teste
+local.settings.json
+local.settings.sample.json
+requirements-dev.txt
+.funcignore

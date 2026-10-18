@@ -1,3 +1,7 @@
+# Runtime (é o que o Azure Functions instala). Scripts e testes: requirements-dev.txt
+azure-functions
+azure-identity
+azure-storage-blob
 fastapi
 uvicorn[standard]
 sqlalchemy
@@ -10,8 +14,4 @@ python-jose[cryptography]
 bcrypt
 python-multipart
 shapely
-geopandas
-pyogrio
 reportlab
-pytest
-httpx

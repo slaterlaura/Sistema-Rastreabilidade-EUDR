@@ -40,11 +40,15 @@ def _saida(dossie: Dossie, *, com_retrato: bool) -> DossieOut:
 
 
 def _arquivo(dossie: Dossie, caminho: str | None, media_type: str, extensao: str) -> Response:
-    if not caminho or not arquivos.existe(caminho):
+    try:
+        if not caminho:
+            raise FileNotFoundError
+        conteudo = arquivos.ler(caminho)
+    except FileNotFoundError:
         raise HTTPException(410, detail="O arquivo deste dossiê não está mais no armazenamento.")
     nome = re.sub(r"[^A-Za-z0-9._-]+", "_", dossie.retrato["embarque"]["identificacao"])
     return Response(
-        content=arquivos.ler(caminho),
+        content=conteudo,
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="dossie-{nome}.{extensao}"'},
     )

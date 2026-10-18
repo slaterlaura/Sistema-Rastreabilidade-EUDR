@@ -12,3 +12,7 @@ dist/
 backend/storage/
 backend/storage_teste/
 .pytest_cache/
+
+# Azure Functions
+backend/local.settings.json
+backend/.python_packages/

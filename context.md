@@ -97,7 +97,7 @@ sem organização. Se um recurso não pertence ao usuário logado, retorna 404, 
 5. Embarques compostos por parcelas (quantidade de cada fazenda), com bloqueio das fazendas não conformes
 6. Geração de dossiê: GeoJSON + PDF
 7. Listagem de dossiês (visão de auditoria)
-8. Deploy em Azure
+8. Deploy em Azure: backend em **Azure Functions** (Flex Consumption), frontend em Static Web Apps
 
 ### Fora — não implementar sem instrução
 
@@ -132,10 +132,11 @@ O produtor rural **não** é usuário nesta versão. A geometria chega pelo expo
 | Banco | PostgreSQL 16 + PostGIS 3.4 |
 | Geoprocessamento | Shapely, GeoPandas (só na carga) |
 | PDF | ReportLab |
-| Deploy | Docker; Azure App Service for Containers + Azure Database for PostgreSQL Flexible Server + Azure Static Web Apps |
+| Deploy | Azure Functions (Flex Consumption, Python 3.13) rodando o FastAPI via ASGI + Azure Blob Storage + Azure Database for PostgreSQL Flexible Server + Azure Static Web Apps |
 
-Restrição: **crédito Azure for Students de USD 100**. Dimensionar para Burstable B1ms e
-App Service B1. Não provisionar armazenamento "por garantia".
+Restrição: **crédito Azure for Students de USD 100** e **orçamento de requisições do plano gratuito**.
+O backend saiu do App Service (que excedia a cota) para o Azure Functions. Dimensionar para Burstable B1ms
+no banco e instância de 512 MB na Function. Não provisionar armazenamento "por garantia".
 
 ---
 
@@ -147,7 +148,7 @@ Monorepo.
 rastreabilidade-eudr/
 ├─ backend/
 │  ├─ app/
-│  │  ├─ main.py            # inicialização do FastAPI, CORS, routers
+│  │  ├─ main.py            # inicialização do FastAPI, CORS, routers (o mesmo app roda no uvicorn e no Functions)
 │  │  ├─ config.py          # pydantic-settings, lê o .env (tolerância, JWT, storage)
 │  │  ├─ database.py        # engine, SessionLocal, get_db
 │  │  ├─ models.py          # tabelas SQLAlchemy
@@ -159,19 +160,24 @@ rastreabilidade-eudr/
 │  │     ├─ geometria.py    # validação e normalização do GeoJSON recebido
 │  │     ├─ verificacao.py  # checagem espacial (R1, R4, R5)
 │  │     ├─ dossie.py       # retrato congelado, GeoJSON e PDF
-│  │     └─ arquivos.py     # storage (disco no dev; Azure Blob no deploy)
+│  │     └─ arquivos.py     # storage: disco (dev/testes) ou Azure Blob (produção)
+│  ├─ function_app.py       # entrada do Azure Functions: AsgiFunctionApp embrulhando app.main:app
+│  ├─ host.json             # routePrefix vazio (rotas sem /api), timeout, amostragem de logs
+│  ├─ .funcignore           # o que não vai no pacote (tests, scripts, alembic, .venv)
 │  ├─ alembic/              # migrações (única fonte do schema)
 │  ├─ scripts/
 │  │  ├─ init/01-postgis.sql
 │  │  ├─ carga_prodes.py    # carrega a camada PRODES (cria uma versão)
 │  │  └─ seed.py            # dados de demonstração
 │  ├─ tests/
-│  ├─ requirements.txt
-│  └─ Dockerfile
+│  ├─ requirements.txt      # só runtime (é o que o Functions instala)
+│  └─ requirements-dev.txt  # + pytest, httpx, geopandas, pyogrio (testes e scripts)
+├─ infra/azure-functions.sh # provisionamento com `az` (revisar antes de rodar)
+├─ .github/workflows/backend.yml  # testes + deploy
 ├─ frontend/
 │  └─ src/
 │     ├─ pages/  components/  api.js
-├─ docker-compose.yml
+├─ docker-compose.yml       # só o banco local
 ├─ .env.example
 └─ README.md
 ```
@@ -379,6 +385,15 @@ trabalhos futuros.
 
 Da máquina, o host é `localhost:5433`. De dentro do Docker, é `db:5432`.
 
+### Rodando o backend localmente
+
+- Dia a dia: `uvicorn app.main:app --reload` dentro de `backend/` (Python **3.13**, o mesmo da Function).
+- Antes de publicar, confira o empacotamento do Functions com o Azure Functions Core Tools:
+  copie `backend/local.settings.sample.json` para `local.settings.json` (fora do git) e rode `func start`
+  em `backend/`. As rotas continuam **sem** prefixo `/api`; a porta é a 7071.
+- Arquivos em dev ficam em `backend/storage` (`STORAGE_BACKEND=local`). Para exercitar o Blob localmente use o
+  Azurite com `STORAGE_BACKEND=blob` e `BLOB_CONNECTION_STRING` (os testes usam um contêiner falso).
+
 `.env` nunca entra no repositório. `.gitignore` deve incluir `.env` e os arquivos de
 shapefile (`*.shp`, `*.dbf`, `*.shx`, `*.prj`, `*.zip`).
 
@@ -386,13 +401,39 @@ shapefile (`*.shp`, `*.dbf`, `*.shx`, `*.prj`, `*.zip`).
 
 ## 12. Deploy no Azure
 
-Três recursos, mesmo grupo e mesma região (`brazilsouth`, ou `eastus` como alternativa).
+Mesmo grupo de recursos e mesma região (`brazilsouth`, ou `eastus` como alternativa; confirmar que a região
+oferece Flex com `az functionapp list-flexconsumption-locations`).
 
 | Camada | Serviço | Configuração |
 |---|---|---|
 | Banco | PostgreSQL Flexible Server | Burstable B1ms, 32 GB |
-| Backend | App Service for Containers | Plano Linux B1 |
-| Frontend | Static Web Apps | Plano gratuito |
+| Backend | Function App, plano **Flex Consumption** | Python 3.13, instância de **512 MB**, máximo de **5** instâncias, 0 sempre prontas |
+| Arquivos | Blob Storage (contêiner privado `origemcheck-arquivos`) | Standard LRS; acesso pela identidade gerenciada |
+| Frontend | Static Web Apps | Plano gratuito; chama a URL da Function direto |
+
+O provisionamento está em `infra/azure-functions.sh` (comandos `az` comentados, **a revisar antes de rodar**).
+O deploy do código é pelo workflow `.github/workflows/backend.yml` (login OIDC) ou por
+`func azure functionapp publish <app> --python`.
+
+### Como o backend roda no Functions
+
+- `function_app.py` embrulha o FastAPI com `AsgiFunctionApp` (autenticação anônima: a segurança é o JWT do sistema).
+  Existe uma única Function com a rota `/{*route}` para todos os métodos, inclusive `OPTIONS`.
+- `host.json` define `routePrefix` vazio, então as URLs são as mesmas do `uvicorn` (sem `/api`).
+- **Cada requisição HTTP é uma execução.** Isso é o que consome a cota; ver "Cota e custo".
+- **Nada de disco:** a instância é efêmera e podem existir várias. Documentos e dossiês vão para o Blob
+  (`STORAGE_BACKEND=blob`, `BLOB_ACCOUNT_URL`), com a identidade gerenciada da Function
+  (papel `Storage Blob Data Contributor` na conta). Sem chave de armazenamento nas configurações.
+- **Migrações e cargas não rodam na Function.** `alembic upgrade head`, `carga_prodes.py` e `seed.py` rodam da
+  máquina de desenvolvimento (ou do CI) com `DATABASE_URL` apontando para o Azure.
+- Timeout de 3min30 por execução (`host.json`): o balanceador HTTP corta em ~230 s de qualquer forma, e
+  uma requisição travada gasta GB-s da cota.
+
+### Conexões com o PostgreSQL
+
+Cada instância mantém o próprio pool (`DB_POOL_SIZE=3` + `DB_MAX_OVERFLOW=2`). A conta
+**instâncias máximas × (pool + overflow)** tem de ficar abaixo do `max_connections` da B1ms (~50):
+5 × 5 = 25. Se subir o limite de instâncias, reveja os dois números.
 
 ### PostGIS no Azure — leia antes de tentar
 
@@ -401,7 +442,7 @@ do servidor. Duas etapas, nesta ordem:
 
 1. Adicionar `POSTGIS` ao parâmetro `azure.extensions` do servidor. Isso dispara uma
    implantação que **reinicia** o servidor.
-2. Só então conectar e rodar `CREATE EXTENSION postgis;`
+2. Só então conectar e rodar `CREATE EXTENSION postgis;` (a migração `0001` faz isso).
 
 ```bash
 az postgres flexible-server parameter set \
@@ -412,21 +453,34 @@ az postgres flexible-server parameter set \
 ### Rede
 
 O servidor recusa conexões externas por padrão. Em Networking: habilitar acesso público,
-liberar o IP da máquina de desenvolvimento (para a carga do PRODES) e permitir serviços do
-Azure (para o App Service). A conexão exige SSL — acrescentar `?sslmode=require` à URL.
+liberar o IP da máquina de desenvolvimento (para migrações, carga do PRODES e seed) e permitir serviços do
+Azure (para a Function). A conexão exige SSL — acrescentar `?sslmode=require` à URL.
 
-Segredos em Configuration → Application settings, nunca no repositório.
+Segredos (`DATABASE_URL`, `JWT_SECRET`) ficam nas configurações do aplicativo da Function, nunca no repositório.
+**Troque o `JWT_SECRET`**: o valor padrão do código é inseguro.
 
 ### CORS
 
-Configurar o `CORSMiddleware` do FastAPI com a URL exata do Static Web Apps.
-**Configurar em um lugar só**: ativar CORS também no painel do App Service gera cabeçalhos
-duplicados, que o navegador rejeita.
+Configurar o `CORSMiddleware` do FastAPI com a URL exata do Static Web Apps (`CORS_ORIGENS`).
+**Configurar em um lugar só**: ativar CORS também no painel da Function gera cabeçalhos
+duplicados, que o navegador rejeita. Deixe o CORS da plataforma vazio.
 
-### Custo
+O Static Web Apps gratuito não deve ser usado como proxy para a Function (vincular um backend próprio
+parece exigir o plano Standard); o frontend usa a URL absoluta da Function (`VITE_API_URL`).
 
-Criar alerta de orçamento em USD 50 no Cost Management no primeiro dia.
-O Flexible Server pode ser parado por até 7 dias, o que zera a cobrança de computação.
+### Cota e custo
+
+- A cota gratuita do Flex é de **250 mil execuções e 100 mil GB-s por mês** por assinatura, só no medidor sob
+  demanda e só em assinatura paga; a conta de armazenamento fica de fora. Em **Azure for Students** confirme em
+  Cost Management se a cota é aplicada ou se o consumo sai do crédito.
+- GB-s = tempo de execução × memória. Com 512 MB, 100 mil GB-s equivalem a ~200 mil segundos de execução.
+- **Não use monitor de uptime em `/health`** e evite *polling* no frontend: cada chamada é uma execução.
+- *Cold start*: com 0 instâncias sempre prontas, a primeira chamada depois de ociosidade leva alguns segundos
+  (import do FastAPI, SQLAlchemy e Shapely). Aceito para este projeto.
+- Medição local (out/2026): o app com todas as rotas usa ~115 MB de pico e importa em ~0,6 s, então a instância
+  de 512 MB (a menor do Flex) tem folga. O tempo real de *cold start* no Azure deve ser medido após o deploy.
+- Criar alerta de orçamento em USD 50 no Cost Management no primeiro dia.
+  O Flexible Server pode ser parado por até 7 dias, o que zera a cobrança de computação.
 
 ---
 
@@ -456,6 +510,11 @@ O Flexible Server pode ser parado por até 7 dias, o que zera a cobrança de com
 | `Invalid geometry` ao salvar | Polígono com autointerseção | `ST_MakeValid()` ou recusar com 400 |
 | `CREATE EXTENSION postgis` falha no Azure | Fora da lista de permitidas | Parâmetro `azure.extensions`, aguardar restart |
 | Backend não conecta em produção | Firewall ou SSL ausente | Liberar serviços do Azure, `?sslmode=require` |
+| `remaining connection slots are reserved` | Instâncias demais × pool | Reduzir `DB_POOL_SIZE`/instâncias máximas (§12) |
+| Download de documento dá 410 ou 500 em produção | `STORAGE_BACKEND` ficou `local` ou falta o papel no Blob | `STORAGE_BACKEND=blob`, `BLOB_ACCOUNT_URL`, papel `Storage Blob Data Contributor` |
+| Rotas dão 404 na Function (`/api/...`) | `routePrefix` do `host.json` não está vazio | Manter `"routePrefix": ""` |
+| Primeira chamada muito lenta | *Cold start* (0 instâncias prontas) | Esperado; não resolver com ping periódico (gasta cota) |
+| Deploy da Function falha ao instalar `geopandas` | Pacote de script no `requirements.txt` de runtime | Manter só em `requirements-dev.txt` |
 | Fazenda em ponto sempre apta | `ST_Area` de ponto é 0 | Tratar ponto com critério binário (R4) |
 
 ---

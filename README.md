@@ -10,8 +10,8 @@ cp .env.example .env                      # ajuste as senhas; DATABASE_URL usa a
 docker compose up -d                      # PostgreSQL 16 + PostGIS na porta 5433
 
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python3.13 -m venv .venv && source .venv/bin/activate   # Python 3.13: o mesmo do Azure Functions
+pip install -r requirements-dev.txt
 
 alembic upgrade head                      # cria o schema (única fonte: migrações Alembic)
 python scripts/carga_prodes.py --arquivo ../data/processed/MataAtlantica_desmatamento_SP.json \
@@ -30,6 +30,21 @@ cd backend && python -m pytest tests -q
 
 Os testes criam e recriam um banco próprio (`eudr_test`) no mesmo servidor do `.env`; não tocam no banco de desenvolvimento.
 
+## Hospedagem: Azure Functions
+
+O backend roda no **Azure Functions (plano Flex Consumption, Python 3.13)**: `backend/function_app.py` embrulha o
+mesmo FastAPI do `uvicorn` (rotas idênticas, sem prefixo `/api`). Escolhido para ficar na cota gratuita; cada
+requisição HTTP conta como uma execução, então evite monitores de uptime e *polling*.
+
+- **Arquivos** (documentos e dossiês) vão para o **Blob Storage** em produção (`STORAGE_BACKEND=blob`); em dev ficam em disco.
+- **Provisionar:** `infra/azure-functions.sh` (comandos `az` comentados; revise antes de rodar).
+- **Publicar:** workflow `.github/workflows/backend.yml` (testes + deploy) ou `func azure functionapp publish <app> --python` em `backend/`.
+- **Migrações e cargas** rodam da sua máquina com `DATABASE_URL` apontando para o Azure, não dentro da Function.
+- **Testar o empacotamento local:** instale o Azure Functions Core Tools, copie `backend/local.settings.sample.json` para
+  `backend/local.settings.json` e rode `func start` em `backend/` (porta 7071).
+
+Detalhes, limites de conexão, CORS e custo: [context.md](context.md), seção 12.
+
 ## Fluxo
 
 1. `POST /auth/registrar` e `POST /auth/login` → token (`Authorization: Bearer ...`).
@@ -47,7 +62,12 @@ Os testes criam e recriam um banco próprio (`eudr_test`) no mesmo servidor do `
 | `JWT_SECRET` | Chave de assinatura dos tokens | **troque em produção** |
 | `TOLERANCIA_M2` | Sobreposição abaixo disso não bloqueia (R5) | 1000 |
 | `CORS_ORIGENS` | Origens permitidas, separadas por vírgula | `http://localhost:5173` |
-| `STORAGE_DIR` | Pasta dos documentos e dossiês | `backend/storage` |
+| `STORAGE_BACKEND` | `local` (disco) ou `blob` (Azure Blob Storage) | `local` |
+| `STORAGE_DIR` | Pasta dos arquivos quando `local` | `backend/storage` |
+| `BLOB_ACCOUNT_URL` | `https://<conta>.blob.core.windows.net` (identidade gerenciada) | — |
+| `BLOB_CONNECTION_STRING` | Só para Azurite/dev | — |
+| `BLOB_CONTAINER` | Contêiner dos arquivos | `origemcheck-arquivos` |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | Pool por instância da Function | 3 / 2 |
 
 ## Banco
 

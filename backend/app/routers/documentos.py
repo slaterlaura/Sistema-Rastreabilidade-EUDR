@@ -1,10 +1,10 @@
 import uuid
 from datetime import date
 from pathlib import PurePath
+from urllib.parse import quote
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -140,13 +140,15 @@ def _obter_documento(db: Session, usuario: Usuario, documento_id: int) -> Docume
 @router.get("/documentos/{documento_id}/arquivo")
 def baixar(documento_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_atual)):
     documento = _obter_documento(db, usuario, documento_id)
-    if not arquivos.existe(documento.caminho_storage):
+    try:
+        conteudo = arquivos.ler(documento.caminho_storage)
+    except FileNotFoundError:
         raise HTTPException(410, detail="O arquivo deste documento não está mais no armazenamento.")
-    return FileResponse(
-        arquivos.raiz() / documento.caminho_storage,
+    nome = documento.nome_arquivo
+    return Response(
+        content=conteudo,
         media_type=documento.content_type,
-        filename=documento.nome_arquivo,
-        content_disposition_type="attachment",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nome)}"},
     )
 
 
