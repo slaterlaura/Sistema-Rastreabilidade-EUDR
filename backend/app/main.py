@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine
-from app.routers import auth, documentos, dossies, embarques, fazendas, fornecedores
+from app.routers import auth, camada, documentos, dossies, embarques, fazendas, fornecedores
 
 app = FastAPI(title="OrigemCheck — Rastreabilidade de Origem (EUDR)", version="0.3.0")
 
@@ -15,6 +15,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # O frontend (outra origem) manda Authorization, então cada GET vem precedido de um OPTIONS,
+    # e no Functions cada um é uma execução. Com o cache do preflight o navegador pergunta uma vez
+    # a cada 2 h por rota (o Chrome não aceita mais que isso).
+    max_age=7200,
 )
 
 app.include_router(auth.router)
@@ -23,6 +27,7 @@ app.include_router(fazendas.router)
 app.include_router(documentos.router)
 app.include_router(embarques.router)
 app.include_router(dossies.router)
+app.include_router(camada.router)
 
 
 @app.get("/health")

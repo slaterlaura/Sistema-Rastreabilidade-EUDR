@@ -22,6 +22,20 @@ uvicorn app.main:app --reload             # http://localhost:8000/docs
 
 Login da demonstração: `demo@exemplo.com.br` / `demo-origemcheck-2026`.
 
+## Como rodar (frontend)
+
+```bash
+cd frontend
+cp .env.example .env          # VITE_API_URL=http://localhost:8000 (ou a URL da Function)
+npm install
+npm run dev                   # http://localhost:5173
+npm run build                 # typecheck + build de produção em dist/ (vai para o Static Web Apps)
+```
+
+Telas: quadro de fazendas (lista com filtros + mapa com a supressão do PRODES hachurada), cadastro com desenho
+de polígono ou ponto, fornecedores com documentos, composição de embarque (fazendas recusadas visíveis, com o motivo),
+evidências e dossiês congelados.
+
 ## Testes
 
 ```bash

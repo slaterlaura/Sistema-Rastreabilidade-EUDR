@@ -127,7 +127,7 @@ O produtor rural **não** é usuário nesta versão. A geometria chega pelo expo
 
 | Camada | Tecnologia |
 |---|---|
-| Frontend | React 18 + Vite, React-Leaflet, leaflet-draw, React Query, React Hook Form |
+| Frontend | React 18 + Vite + TypeScript, Tailwind CSS 4 com estrutura shadcn (`components/ui`), React-Leaflet, React Query, React Hook Form, lucide-react. Desenho de geometria com editor próprio (o `leaflet-draw` está sem manutenção e quebra em ESM) |
 | Backend | FastAPI, SQLAlchemy 2.x, GeoAlchemy2, Pydantic v2, Alembic |
 | Banco | PostgreSQL 16 + PostGIS 3.4 |
 | Geoprocessamento | Shapely, GeoPandas (só na carga) |
@@ -174,9 +174,16 @@ rastreabilidade-eudr/
 │  └─ requirements-dev.txt  # + pytest, httpx, geopandas, pyogrio (testes e scripts)
 ├─ infra/azure-functions.sh # provisionamento com `az` (revisar antes de rodar)
 ├─ .github/workflows/backend.yml  # testes + deploy
-├─ frontend/
+├─ frontend/                # Vite + React 18 + TypeScript + Tailwind 4 (estrutura shadcn)
+│  ├─ components.json       # configuração do shadcn CLI
+│  ├─ public/staticwebapp.config.json   # fallback de rotas no Static Web Apps
 │  └─ src/
-│     ├─ pages/  components/  api.js
+│     ├─ components/ui/     # primitivas (button, input) e o quadro de fazendas
+│     │  ├─ fazendas-board.tsx           # lista + filtros + mapa (tela principal)
+│     │  └─ fazendas-board-utils/mapa.tsx # mapa base, supressão hachurada, fazenda por status
+│     ├─ components/        # editor de geometria, documentos, layout, campos de formulário
+│     ├─ pages/             # uma por rota (§8)
+│     └─ lib/               # api.ts (token, downloads), consultas (React Query), tipos, formato
 ├─ docker-compose.yml       # só o banco local
 ├─ .env.example
 └─ README.md
@@ -299,6 +306,8 @@ GET    /dossies
 GET    /dossies/{id}
 GET    /dossies/{id}/geojson                → Content-Disposition: attachment
 GET    /dossies/{id}/pdf                    → Content-Disposition: attachment
+
+GET    /camada/prodes?bbox=o,s,l,n          → supressão pós-corte do recorte, simplificada, para o mapa
 ```
 
 ### Transições de estado
@@ -465,6 +474,12 @@ Configurar o `CORSMiddleware` do FastAPI com a URL exata do Static Web Apps (`CO
 **Configurar em um lugar só**: ativar CORS também no painel da Function gera cabeçalhos
 duplicados, que o navegador rejeita. Deixe o CORS da plataforma vazio.
 
+Como o frontend é outra origem e envia `Authorization`, o navegador manda um `OPTIONS` (preflight) antes
+das requisições, e **cada preflight também é uma execução**. O FastAPI responde com
+`Access-Control-Max-Age: 7200` (o máximo que o Chrome aceita), mas o cache é por URL: URLs novas
+(`/fazendas/9`, cada recorte da camada) ainda geram um preflight. Na medição local, 16 `OPTIONS` para 29 `GET`
+numa sessão nova.
+
 O Static Web Apps gratuito não deve ser usado como proxy para a Function (vincular um backend próprio
 parece exigir o plano Standard); o frontend usa a URL absoluta da Function (`VITE_API_URL`).
 
@@ -475,6 +490,8 @@ parece exigir o plano Standard); o frontend usa a URL absoluta da Function (`VIT
   Cost Management se a cota é aplicada ou se o consumo sai do crédito.
 - GB-s = tempo de execução × memória. Com 512 MB, 100 mil GB-s equivalem a ~200 mil segundos de execução.
 - **Não use monitor de uptime em `/health`** e evite *polling* no frontend: cada chamada é uma execução.
+  O frontend segue isso: React Query com `staleTime` de 5 min e sem refazer consultas ao focar a janela;
+  a camada de supressão só é pedida com zoom ≥ 10, em recortes arredondados (grade de 0,25°) e com cache.
 - *Cold start*: com 0 instâncias sempre prontas, a primeira chamada depois de ociosidade leva alguns segundos
   (import do FastAPI, SQLAlchemy e Shapely). Aceito para este projeto.
 - Medição local (out/2026): o app com todas as rotas usa ~115 MB de pico e importa em ~0,6 s, então a instância
@@ -486,7 +503,10 @@ parece exigir o plano Standard); o frontend usa a URL absoluta da Function (`VIT
 
 ## 13. Diretrizes de interface
 
-- O mapa é a tela principal do cadastro, não um acessório.
+- O mapa é a tela principal do cadastro, não um acessório. Implementado em `fazendas-board.tsx`: lista com
+  filtros por status (chips) à esquerda, mapa à direita, rótulos em fonte mono.
+- Mapa base sem chave de API: cinza-claro da Esri (padrão), OpenStreetMap e satélite da Esri (para desenhar sobre a lavoura).
+  O CARTO passou a exigir chave.
 - Status codificado em **cor do traço**: verde (apta), âmbar/vermelho (bloqueada),
   cinza (pendente). Nunca só em texto.
 - A camada de supressão fica **por baixo** das fazendas, com hachura diagonal, e deve ser
@@ -506,7 +526,9 @@ parece exigir o plano Standard); o frontend usa a URL absoluta da Function (`VIT
 | `ST_Area` devolve ~0,0003 | Falta o cast `::geography` | Usar `ST_Area(geom::geography)` |
 | Toda fazenda sai apta | SRID divergente, campo de ano errado ou camada vazia | `SELECT COUNT(*), MIN(ano), MAX(ano) FROM camada_prodes` |
 | Checagem acima de 10 s | Índice GiST ausente | Criar o índice e rodar `ANALYZE` |
-| Mapa com tiles desalinhados | CSS do Leaflet não importado | `import "leaflet/dist/leaflet.css"` no `main.jsx` |
+| Mapa com tiles desalinhados | CSS do Leaflet não importado | `import "leaflet/dist/leaflet.css"` no `main.tsx` |
+| Mapa mostra "API KEY REQUIRED" | Provedor de tiles passou a exigir chave | Usar os provedores de `mapa.tsx` |
+| Camada de supressão não aparece depois de enquadrar | `fitBounds` antes de a camada ouvir `moveend` | `CamadaSupressao` relê a vista ao montar |
 | `Invalid geometry` ao salvar | Polígono com autointerseção | `ST_MakeValid()` ou recusar com 400 |
 | `CREATE EXTENSION postgis` falha no Azure | Fora da lista de permitidas | Parâmetro `azure.extensions`, aguardar restart |
 | Backend não conecta em produção | Firewall ou SSL ausente | Liberar serviços do Azure, `?sslmode=require` |

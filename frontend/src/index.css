@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: #f8fafc;
+  color: #020617;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Leaflet herda a tipografia do app */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #eef1f4;
+}
+.leaflet-control-layers,
+.leaflet-bar {
+  border-radius: 0.5rem !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06) !important;
+}
+.leaflet-control-layers-expanded {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.leaflet-tooltip {
+  border-radius: 6px;
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+/* Supressão do PRODES: hachura diagonal (o padrão SVG vive em <DefinicoesHachura />) */
+.supressao-hachura {
+  fill: url(#hachura-supressao);
+  fill-opacity: 1;
+}

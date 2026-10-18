@@ -61,6 +61,7 @@ def test_preflight_de_cors_e_atendido_pelo_fastapi():
     })
     assert r.status_code == 200
     assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert r.headers["access-control-max-age"] == "7200"  # preflight em cache economiza execuções
     assert chamar("OPTIONS", "/fazendas", headers={"Origin": "https://malicioso.example", "Access-Control-Request-Method": "GET"}).status_code == 400
 
 
