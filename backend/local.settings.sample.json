@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "DATABASE_URL": "postgresql+psycopg2://eudr:SENHA@localhost:5433/eudr",
+    "JWT_SECRET": "troque-esta-chave",
+    "TOLERANCIA_M2": "1000",
+    "CORS_ORIGENS": "http://localhost:5173",
+    "STORAGE_BACKEND": "local"
+  },
+  "Host": {
+    "CORS": ""
+  }
+}
