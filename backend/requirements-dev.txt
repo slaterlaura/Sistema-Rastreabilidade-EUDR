@@ -1,0 +1,9 @@
+-r requirements.txt
+
+# testes
+pytest
+httpx
+
+# scripts de carga/seed (não vão para a Function)
+geopandas
+pyogrio

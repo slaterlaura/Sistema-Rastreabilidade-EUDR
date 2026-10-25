@@ -1,0 +1,17 @@
+# Runtime (é o que o Azure Functions instala). Scripts e testes: requirements-dev.txt
+azure-functions
+azure-identity
+azure-storage-blob
+fastapi
+uvicorn[standard]
+sqlalchemy
+geoalchemy2
+psycopg2-binary
+alembic
+pydantic-settings
+email-validator
+python-jose[cryptography]
+bcrypt
+python-multipart
+shapely
+reportlab

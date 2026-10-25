@@ -1,0 +1,18 @@
+.env
+__pycache__/
+.venv/
+node_modules/
+dist/
+*.zip
+*.shp
+*.dbf
+*.shx
+*.prj
+# storage local e testes
+backend/storage/
+backend/storage_teste/
+.pytest_cache/
+
+# Azure Functions
+backend/local.settings.json
+backend/.python_packages/
