@@ -19,3 +19,6 @@ backend/.python_packages/
 
 # downloads brutos (TerraBrasilis, SICAR) e GeoJSONs grandes gerados a partir deles
 data/raw/
+
+# macOS
+.DS_Store

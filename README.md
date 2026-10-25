@@ -28,7 +28,13 @@ posteriores a 2020 já na leitura.
 
 ```bash
 cd backend
+# bioma inteiro (só DESMATAMENTO e anos > 2020)
+python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation_biome_cerrado_v20261016.zip --bioma Cerrado
+# só uma UF (aceita sigla; o arquivo pode trazer "MG" ou "MINAS GERAIS")
 python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation.zip --bioma Cerrado --uf MG
+# zip com duas camadas (Amazônia)
+python scripts/carga_prodes.py --arquivo ../data/raw/prodes_amazonia_legal_2026_pri_v20261016.zip \
+    --camada yearly_deforestation_2026_pri_amazonia_legal_v20261015 --bioma "Amazonia preliminar"
 # só gerar o GeoJSON recortado, sem mexer no banco:
 python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation.zip --uf MG --somente-converter ../data/raw/prodes_cerrado_mg.geojson
 ```
