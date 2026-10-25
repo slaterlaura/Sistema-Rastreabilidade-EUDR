@@ -371,7 +371,22 @@ converter para o ano final antes do filtro. Errar aqui faz **toda fazenda sair a
 e o erro é silencioso.
 
 Roteiro da carga: `read_file` → `to_crs(4326)` → filtrar `ano > 2020` → `to_postgis` →
-criar índice GiST → `ANALYZE`.
+criar índice GiST → `ANALYZE`. Implementado em `backend/scripts/carga_prodes.py`:
+
+- **Não é preciso converter para GeoJSON.** O script lê direto `.shp`, o `.zip` baixado do TerraBrasilis, `.gpkg` e GeoJSON.
+- `--uf MG` recorta pela coluna de UF do arquivo (`state`, `uf`, `estado`) e rotula a versão. O filtro de UF e o de
+  ano > 2020 são aplicados **na leitura**, então o bioma inteiro não precisa caber na memória.
+- Arquivo sem sistema de coordenadas (shapefile sem `.prj`) é recusado; informe `--crs-origem EPSG:4674`.
+- `--somente-converter saida.geojson` aplica os mesmos filtros e grava o GeoJSON sem tocar no banco;
+  `--salvar-geojson` grava uma cópia do que foi carregado.
+- Recarregar o mesmo bioma/UF substitui a carga anterior; biomas ou UFs diferentes convivem.
+- Depois de carregar, use **Reprocessar camada** no app para reverificar as fazendas existentes.
+- Downloads brutos ficam em `data/raw/` (fora do git).
+
+```bash
+cd backend
+python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation.zip --bioma Cerrado --uf MG
+```
 
 ### Limitação conhecida, a declarar na documentação
 

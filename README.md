@@ -20,6 +20,21 @@ python scripts/seed.py                    # opcional: dados de demonstração
 uvicorn app.main:app --reload             # http://localhost:8000/docs
 ```
 
+### Mais dados de desmatamento (PRODES)
+
+Baixe o "Incremento anual de desmatamento" do bioma no TerraBrasilis e salve em `data/raw/` (fora do git).
+**Não precisa converter para GeoJSON**: o script lê o `.zip` ou o `.shp` direto e recorta pela UF e pelos anos
+posteriores a 2020 já na leitura.
+
+```bash
+cd backend
+python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation.zip --bioma Cerrado --uf MG
+# só gerar o GeoJSON recortado, sem mexer no banco:
+python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation.zip --uf MG --somente-converter ../data/raw/prodes_cerrado_mg.geojson
+```
+
+Depois, no app: **Fazendas → Reprocessar camada**. Opções: `python scripts/carga_prodes.py --help`.
+
 Login da demonstração: `demo@exemplo.com.br` / `demo-origemcheck-2026`.
 
 ## Como rodar (frontend)
