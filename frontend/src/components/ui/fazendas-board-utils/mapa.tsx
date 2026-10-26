@@ -93,6 +93,22 @@ export interface EstadoCamada {
   erro: string | null;
 }
 
+export interface VersaoCamada {
+  versao: number | null;
+  atualizada_em: string | null;
+  biomas: string[];
+}
+
+/** Uma consulta por sessão (5 min); "Reprocessar camada" a invalida. */
+export function useVersaoCamada(habilitada = true) {
+  return useQuery({
+    queryKey: ["camada-versao"],
+    queryFn: () => api.get<VersaoCamada>("/camada/versao"),
+    enabled: habilitada,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 const ZOOM_MINIMO_CAMADA = 10;
 const PASSO_GRADE = 0.25; // arredonda o recorte para reaproveitar respostas em cache
 
@@ -139,10 +155,13 @@ export function CamadaSupressao({
   }, [lerVista]);
 
   const habilitada = visivel && vista.zoom >= ZOOM_MINIMO_CAMADA;
+  // A versão vai na URL: depois de uma carga nova do PRODES, o navegador não reaproveita a camada velha.
+  const { data: versao } = useVersaoCamada(visivel);
+  const v = versao?.versao ?? 0;
   const { data, isFetching, error } = useQuery({
-    queryKey: ["camada-prodes", vista.recorte],
-    queryFn: () => api.get<Camada>(`/camada/prodes?bbox=${vista.recorte}`),
-    enabled: habilitada,
+    queryKey: ["camada-prodes", v, vista.recorte],
+    queryFn: () => api.get<Camada>(`/camada/prodes?bbox=${vista.recorte}&v=${v}`),
+    enabled: habilitada && versao !== undefined,
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000,
     placeholderData: (anterior) => anterior,
@@ -160,7 +179,7 @@ export function CamadaSupressao({
   if (!habilitada || !data) return null;
   return (
     <GeoJSON
-      key={vista.recorte + data.features.length}
+      key={`${v}-${vista.recorte}-${data.features.length}`}
       data={data as GeoJSON.FeatureCollection}
       pane="supressao"
       interactive={false}

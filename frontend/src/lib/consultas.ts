@@ -51,11 +51,13 @@ export function useInvalidarCadastro() {
 
 export function useReverificarTodas() {
   const invalidar = useInvalidarCadastro();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
       api.post<{ verificadas: number; mudaram_de_status: { nome: string; de: string; para: string }[] }>(
         "/fazendas/reverificar",
       ),
-    onSuccess: () => invalidar(),
+    // reprocessar costuma vir depois de uma carga nova: o mapa também relê a camada
+    onSuccess: () => Promise.all([invalidar(), queryClient.invalidateQueries({ queryKey: ["camada-versao"] })]),
   });
 }
