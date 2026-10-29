@@ -26,3 +26,29 @@ def test_recorte_grande_ou_invalido_e_recusado(client, auth, camada):
 
 def test_exige_login(client, camada):
     assert client.get("/camada/prodes?bbox=-50.1,-21.1,-49.9,-20.9").status_code == 401
+
+
+def test_versao_da_camada_muda_a_cada_carga(client, auth, camada):
+    from sqlalchemy import text
+
+    from app.database import engine
+
+    r = client.get("/camada/versao", headers=auth)
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    antes = r.json()
+    assert antes["versao"] == camada and antes["biomas"] == ["Teste"]
+
+    with engine.begin() as con:
+        nova = con.execute(
+            text("INSERT INTO camada_versao (origem, bioma, n_feicoes) VALUES ('PRODES','Cerrado',1) RETURNING id")
+        ).scalar_one()
+        con.execute(
+            text("INSERT INTO camada_prodes (versao_id, geom, ano) VALUES (:v, ST_GeomFromText('POLYGON((-47 -15,-46.99 -15,-46.99 -14.99,-47 -14.99,-47 -15))',4326), 2023)"),
+            {"v": nova},
+        )
+    depois = client.get("/camada/versao", headers=auth).json()
+    assert depois["versao"] == nova and depois["biomas"] == ["Cerrado", "Teste"]
+
+
+def test_versao_sem_camada_carregada(client, auth):
+    assert client.get("/camada/versao", headers=auth).json() == {"versao": None, "atualizada_em": None, "biomas": []}

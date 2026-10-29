@@ -28,6 +28,25 @@ _SQL = text(
 )
 
 
+_SQL_VERSAO = text(
+    """
+    SELECT max(v.id) AS versao, max(v.carregada_em) AS atualizada_em,
+           coalesce(array_agg(DISTINCT v.bioma ORDER BY v.bioma) FILTER (WHERE v.id IS NOT NULL), '{}') AS biomas
+    FROM camada_versao v
+    WHERE EXISTS (SELECT 1 FROM camada_prodes p WHERE p.versao_id = v.id)
+    """
+)
+
+
+@router.get("/versao")
+def versao_atual(response: Response, db: Session = Depends(get_db), usuario: Usuario = Depends(usuario_atual)):
+    """Identifica a carga mais recente. O mapa põe esse número na URL dos recortes, então uma carga
+    nova muda a URL e o navegador não reaproveita a camada antiga do cache."""
+    linha = db.execute(_SQL_VERSAO).one()
+    response.headers["Cache-Control"] = "no-store"
+    return {"versao": linha.versao, "atualizada_em": linha.atualizada_em, "biomas": list(linha.biomas)}
+
+
 def _ler_bbox(bbox: str) -> tuple[float, float, float, float]:
     try:
         oeste, sul, leste, norte = (float(v) for v in bbox.split(","))
@@ -56,7 +75,8 @@ def supressao(
          "corte": settings.ano_corte, "tol": tolerancia, "limite": LIMITE_FEICOES + 1},
     ).all()
     truncado = len(linhas) > LIMITE_FEICOES
-    # A camada só muda numa nova carga: o navegador pode reaproveitar a resposta (cada chamada é uma execução).
+    # A camada só muda numa nova carga, e o frontend põe a versão (?v=) na URL: o navegador pode
+    # reaproveitar a resposta (cada chamada é uma execução) sem risco de mostrar camada velha.
     response.headers["Cache-Control"] = "private, max-age=3600"
     return {
         "type": "FeatureCollection",

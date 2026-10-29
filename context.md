@@ -371,7 +371,32 @@ converter para o ano final antes do filtro. Errar aqui faz **toda fazenda sair a
 e o erro é silencioso.
 
 Roteiro da carga: `read_file` → `to_crs(4326)` → filtrar `ano > 2020` → `to_postgis` →
-criar índice GiST → `ANALYZE`.
+criar índice GiST → `ANALYZE`. Implementado em `backend/scripts/carga_prodes.py`:
+
+- **Não é preciso converter para GeoJSON.** O script lê direto `.shp`, o `.zip` baixado do TerraBrasilis, `.gpkg` e GeoJSON.
+- Sem `--uf`, carrega o bioma inteiro (é o que está no banco: os seis biomas, todas as UFs).
+  `--uf MG` recorta pela coluna `state`, aceitando **sigla ou nome**: o TerraBrasilis não é consistente
+  (o Cerrado traz "MINAS GERAIS", a Mata Atlântica "MG", o Pampa mistura os dois). Filtrar só pela sigla
+  pegaria 49 de 48.749 polígonos do Cerrado mineiro, e as fazendas sairiam aptas em silêncio.
+- Só a classe **DESMATAMENTO** entra por padrão: a EUDR define desmatamento como conversão para uso agrícola,
+  então RESERVATORIO (alagamento de represa) e QUEIMADA ficam de fora. `--classes todas` inclui.
+- Os filtros de UF, classe e ano > 2020 são aplicados **na leitura**: o bioma inteiro não precisa caber na memória.
+- Zip com mais de uma camada (o da Amazônia traz `yearly_deforestation` e `residual`) exige `--camada`.
+- Arquivo sem sistema de coordenadas (shapefile sem `.prj`) é recusado; informe `--crs-origem EPSG:4674`.
+- `--somente-converter saida.geojson` aplica os mesmos filtros e grava o GeoJSON sem tocar no banco;
+  `--salvar-geojson` grava uma cópia do que foi carregado.
+- Carga do bioma inteiro substitui todas as cargas anteriores daquele bioma; carga de uma UF substitui a
+  daquele bioma/UF e é recusada se o bioma inteiro já estiver carregado (duplicaria a UF).
+- **Amazônia:** o arquivo `prodes_amazonia_legal_2026_pri` é só o **preliminar de 2026**. Ele está carregado
+  como bioma `Amazonia preliminar`. O histórico (2021–2025) é o `yearly_deforestation` da Amazônia Legal e deve
+  ser carregado como `Amazonia`, sem apagar o preliminar. Sem ele, desmatamento de 2021–2025 na Amazônia não bloqueia.
+- Depois de carregar, use **Reprocessar camada** no app para reverificar as fazendas existentes.
+- Downloads brutos ficam em `data/raw/` (fora do git).
+
+```bash
+cd backend
+python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation.zip --bioma Cerrado --uf MG
+```
 
 ### Limitação conhecida, a declarar na documentação
 

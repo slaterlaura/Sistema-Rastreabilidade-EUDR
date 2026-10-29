@@ -16,3 +16,9 @@ backend/storage_teste/
 # Azure Functions
 backend/local.settings.json
 backend/.python_packages/
+
+# downloads brutos (TerraBrasilis, SICAR) e GeoJSONs grandes gerados a partir deles
+data/raw/
+
+# macOS
+.DS_Store
