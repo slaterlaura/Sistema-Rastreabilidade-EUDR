@@ -108,3 +108,10 @@ Detalhes, limites de conexão, CORS e custo: [context.md](context.md), seção 1
 
 O schema é criado **somente** pelas migrações (`backend/alembic`). Não altere tabelas direto no banco.
 Para uma nova migração: `alembic revision --autogenerate -m "descrição"` e confira o arquivo gerado.
+
+## Links úteis
+
+- **Bases dos biomas (PRODES, TerraBrasilis):** https://terrabrasilis.dpi.inpe.br/geonetwork/srv/eng/catalog.search#/metadata/2b439f5a-b53d-4d56-9937-99026a205e9e
+- **Base dos imóveis rurais (consulta pública do CAR):** https://consultapublica.car.gov.br/publico/imoveis/index
+- **Conversor de formatos geográficos (Mapshaper):** https://mapshaper.org/ — útil para inspecionar ou simplificar arquivos;
+  para carregar o PRODES não é preciso converter (o `carga_prodes.py` lê o `.zip` direto).
