@@ -125,6 +125,7 @@ parcelas, e cada parcela aponta para **uma** fazenda; um embarque fechado tem **
 | `documento` | Anexos | pertence a um fornecedor **ou** a uma fazenda; tipo, validade, `sha256` do arquivo |
 | `camada_versao` | Cada carga do PRODES | bioma, UF, arquivo de origem, quantas feições |
 | `camada_prodes` | Os polígonos de desmatamento | `geom`, `ano`, `versao_id` |
+| `imovel_versao` / `imovel` | A base de imóveis do CAR, **comum a todos** | `cod_imovel`, `geom`, `area_ha`, `situacao` |
 | `embarque` | As remessas | `status` (`rascunho` ou `fechado`), destino, data |
 | `parcela` | Itens do embarque | `fazenda_id`, `quantidade_kg` |
 | `dossie` | A prova congelada | `retrato` (JSON com tudo copiado), caminhos do GeoJSON e do PDF |

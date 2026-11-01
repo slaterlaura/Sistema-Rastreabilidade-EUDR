@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine
-from app.routers import auth, camada, documentos, dossies, embarques, fazendas, fornecedores
+from app.routers import auth, camada, documentos, dossies, embarques, fazendas, fornecedores, imoveis
 
 app = FastAPI(title="OrigemCheck — Rastreabilidade de Origem (EUDR)", version="0.3.0")
 
@@ -30,6 +30,7 @@ app.include_router(documentos.router)
 app.include_router(embarques.router)
 app.include_router(dossies.router)
 app.include_router(camada.router)
+app.include_router(imoveis.router)
 
 
 @app.get("/health")

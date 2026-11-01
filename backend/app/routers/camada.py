@@ -43,8 +43,14 @@ def versao_atual(response: Response, db: Session = Depends(get_db), usuario: Usu
     """Identifica a carga mais recente. O mapa põe esse número na URL dos recortes, então uma carga
     nova muda a URL e o navegador não reaproveita a camada antiga do cache."""
     linha = db.execute(_SQL_VERSAO).one()
+    imoveis = db.execute(text("SELECT max(versao_id) FROM imovel")).scalar()
     response.headers["Cache-Control"] = "no-store"
-    return {"versao": linha.versao, "atualizada_em": linha.atualizada_em, "biomas": list(linha.biomas)}
+    return {
+        "versao": linha.versao,
+        "atualizada_em": linha.atualizada_em,
+        "biomas": list(linha.biomas),
+        "imoveis_versao": imoveis,
+    }
 
 
 def _ler_bbox(bbox: str) -> tuple[float, float, float, float]:
