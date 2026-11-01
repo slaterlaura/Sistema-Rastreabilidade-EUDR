@@ -22,3 +22,7 @@ data/raw/
 
 # macOS
 .DS_Store
+
+# deploy no Azure: segredos e dumps do banco
+.env.azure
+*.dump

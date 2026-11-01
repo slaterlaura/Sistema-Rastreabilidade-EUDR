@@ -495,15 +495,14 @@ Segredos (`DATABASE_URL`, `JWT_SECRET`) ficam nas configurações do aplicativo 
 
 ### CORS
 
-Configurar o `CORSMiddleware` do FastAPI com a URL exata do Static Web Apps (`CORS_ORIGENS`).
-**Configurar em um lugar só**: ativar CORS também no painel da Function gera cabeçalhos
-duplicados, que o navegador rejeita. Deixe o CORS da plataforma vazio.
+**Configurar em um lugar só**, senão o cabeçalho sai duplicado e o navegador rejeita:
 
-Como o frontend é outra origem e envia `Authorization`, o navegador manda um `OPTIONS` (preflight) antes
-das requisições, e **cada preflight também é uma execução**. O FastAPI responde com
-`Access-Control-Max-Age: 7200` (o máximo que o Chrome aceita), mas o cache é por URL: URLs novas
-(`/fazendas/9`, cada recorte da camada) ainda geram um preflight. Na medição local, 16 `OPTIONS` para 29 `GET`
-numa sessão nova.
+- **No Azure: CORS da plataforma** (`az functionapp cors add --allowed-origins https://<site>.azurestaticapps.net`)
+  e `CORS_ORIGENS` **vazio**. Descoberto no deploy: no plano Flex o servidor da plataforma (Kestrel) responde sozinho
+  ao preflight `OPTIONS` com 204 e sem cabeçalhos, antes de chegar ao FastAPI; com o CORS configurado nele, responde
+  certo. Esses `OPTIONS` não executam a função, então não contam na cota.
+- **Local: `CORSMiddleware` do FastAPI** com `CORS_ORIGENS=http://localhost:5173` (responde com
+  `Access-Control-Max-Age: 7200`).
 
 O Static Web Apps gratuito não deve ser usado como proxy para a Function (vincular um backend próprio
 parece exigir o plano Standard); o frontend usa a URL absoluta da Function (`VITE_API_URL`).

@@ -485,11 +485,11 @@ cada requisição a esse embrulho, que repassa ao FastAPI. As rotas são as mesm
 gratuita mensal (250 mil execuções no Flex). Daí alguns cuidados no código:
 
 - cada requisição é uma execução, então o frontend usa cache e não fica perguntando repetidamente;
-- o preflight de CORS (um pedido `OPTIONS` que o navegador faz antes das requisições com token) também conta; o
-  backend pede ao navegador para guardar a resposta por 2 horas;
+- o preflight de CORS (um pedido `OPTIONS` que o navegador faz antes das requisições com token) é respondido pela
+  própria plataforma da Function, sem executar a função, então não conta na cota;
 - cada instância da Function abre poucas conexões com o banco (pool de 3 + 2), para não esgotar o PostgreSQL.
 
-Comandos de provisionamento: `infra/azure-functions.sh`. Pipeline: `.github/workflows/backend.yml`.
+Passo a passo do deploy: [DEPLOY-AZURE.md](DEPLOY-AZURE.md). Pipeline (só testes): `.github/workflows/backend.yml`.
 
 ### Como rodar localmente
 
@@ -524,22 +524,19 @@ Abrir `http://localhost:5173`. Conta de demonstração: `demo@exemplo.com.br` / 
 | Carga do PRODES direto do `.zip` com recorte por UF, classe e ano | Testes + carga real dos seis biomas (863 mil polígonos) |
 | Ponte com o Azure Functions (rotas, CORS, upload binário) | Testes que passam pelo mesmo middleware que o Azure usa |
 | Storage no Blob | Testes com um contêiner simulado |
+| **No ar no Azure** (Function Flex + PostgreSQL B1ms + Blob + Static Web Apps, brazilsouth) | Em produção: login, fazendas, camada do mapa, upload/download de documento no Blob, dossiê e rotas diretas, testados no navegador e pela API |
 
 No total, **75 testes automáticos do backend**, rodando contra um banco de teste separado (`eudr_test`).
 
 ### Ainda não verificado
 
-- **Deploy no Azure:** nunca foi executado. O script `infra/azure-functions.sh` e o workflow do GitHub foram escritos,
-  mas não rodaram (a CLI do Azure não estava disponível).
-- **Blob Storage real:** só testado com simulação.
-- **`func start`** (rodar como Function na máquina): o Azure Functions Core Tools não está instalado.
+- **Deploy automático pelo GitHub:** o workflow só roda os testes; o deploy é manual (ver [DEPLOY-AZURE.md](DEPLOY-AZURE.md)).
+- **`func start`** (rodar como Function na máquina): não testado.
 - **Frontend:** não tem testes automáticos, nem build no pipeline.
 
 ### Falta fazer / pontos de atenção
 
 - **Amazônia:** só o preliminar de 2026 está carregado; falta o histórico 2021–2025.
-- **Reprocessar camada** depois das cargas novas (as fazendas de demonstração ainda apontam para a versão antiga).
-- **`JWT_SECRET`:** trocar antes do deploy (o valor padrão é inseguro).
 - **React Router:** dois alertas de segurança moderados que só se resolvem na versão 7 (não afetam este app hoje).
 - **Fora do escopo por decisão** (ver `context.md` §3): mistura de cargas/balanço de massa, outras camadas (Ibama,
   terras indígenas), portal do importador, IA/OCR.

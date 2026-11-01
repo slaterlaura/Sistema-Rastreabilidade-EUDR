@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# RASCUNHO ANTIGO. Use o tutorial docs/DEPLOY-AZURE.md, que inclui o PostgreSQL e o frontend.
 # Provisiona o backend no Azure Functions (plano Flex Consumption, Python 3.13).
 #
 # ATENÇÃO: este script NÃO foi executado pelo autor (a CLI do Azure não estava disponível no ambiente
@@ -58,7 +59,7 @@ az functionapp config appsettings set --resource-group "$RG" --name "$APP" --set
   "BLOB_ACCOUNT_URL=https://${STORAGE}.blob.core.windows.net" \
   "BLOB_CONTAINER=$CONTAINER" \
   "DB_POOL_SIZE=3" "DB_MAX_OVERFLOW=2"
-# CORS: NÃO configure CORS no painel/CLI da Function. O FastAPI já responde (CORSMiddleware);
+# CORS: ATENÇÃO, o que segue está errado para o plano Flex. Veja docs/DEPLOY-AZURE.md, passo 5.3.
 # configurar nos dois lugares duplica os cabeçalhos e o navegador recusa.
 
 echo "==> 7/7 PostgreSQL: libera os serviços do Azure e habilita o PostGIS"

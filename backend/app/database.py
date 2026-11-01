@@ -15,6 +15,9 @@ engine = create_engine(
     pool_timeout=10,
     pool_recycle=300,  # o Azure derruba conexões ociosas
     pool_pre_ping=True,
+    # Sem isso, banco inacessível (firewall) deixa a requisição pendurada até o timeout da Function,
+    # gastando a cota de GB-s; com 10 s ela falha rápido e /health/db responde "unreachable".
+    connect_args={"connect_timeout": 10},
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)

@@ -8,7 +8,9 @@ from app.routers import auth, camada, documentos, dossies, embarques, fazendas, 
 
 app = FastAPI(title="OrigemCheck — Rastreabilidade de Origem (EUDR)", version="0.3.0")
 
-# CORS configurado só aqui (ativar também no painel do Azure duplica os cabeçalhos)
+# CORS no desenvolvimento local. No Azure Functions a plataforma intercepta o preflight (OPTIONS) antes
+# do FastAPI, então lá o CORS é configurado na Function (az functionapp cors add) e CORS_ORIGENS fica vazio,
+# para o cabeçalho não sair duplicado.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origens.split(",") if o.strip()],
