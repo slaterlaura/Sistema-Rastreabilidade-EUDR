@@ -463,6 +463,17 @@ O deploy do código é pelo workflow `.github/workflows/backend.yml` (login OIDC
 - Timeout de 3min30 por execução (`host.json`): o balanceador HTTP corta em ~230 s de qualquer forma, e
   uma requisição travada gasta GB-s da cota.
 
+### Entrega contínua (CI/CD)
+
+- Todo PR roda `backend / testes` (pytest + `alembic check` com PostGIS) e `frontend / build` (typecheck + build);
+  os dois são checks obrigatórios da `main`, que exige PR com 1 aprovação.
+- Merge na `main` publica só o que mudou: a Function (`Azure/functions-action`, login OIDC por **identidade
+  gerenciada com credencial federada**, porque a conta de estudante não registra aplicativos no Entra ID) e o
+  Static Web Apps (token de deploy).
+- **Migrações não rodam no CI** (o runner não tem IP fixo para o firewall do banco): são aplicadas manualmente no
+  Azure antes do merge, e precisam ser compatíveis com a versão anterior do código.
+- Fluxo para quem contribui: `CONTRIBUTING.md`. Configuração única: `docs/DEPLOY-AZURE.md`, passo 8.
+
 ### Conexões com o PostgreSQL
 
 Cada instância mantém o próprio pool (`DB_POOL_SIZE=3` + `DB_MAX_OVERFLOW=2`). A conta

@@ -489,7 +489,9 @@ gratuita mensal (250 mil execuções no Flex). Daí alguns cuidados no código:
   própria plataforma da Function, sem executar a função, então não conta na cota;
 - cada instância da Function abre poucas conexões com o banco (pool de 3 + 2), para não esgotar o PostgreSQL.
 
-Passo a passo do deploy: [DEPLOY-AZURE.md](DEPLOY-AZURE.md). Pipeline (só testes): `.github/workflows/backend.yml`.
+Passo a passo do deploy: [DEPLOY-AZURE.md](DEPLOY-AZURE.md). Depois da configuração inicial, o deploy é automático:
+todo PR roda os testes (`.github/workflows/backend.yml` e `frontend.yml`), e o merge na `main` publica no Azure.
+O fluxo para quem contribui está no [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ### Como rodar localmente
 
@@ -530,7 +532,7 @@ No total, **75 testes automáticos do backend**, rodando contra um banco de test
 
 ### Ainda não verificado
 
-- **Deploy automático pelo GitHub:** o workflow só roda os testes; o deploy é manual (ver [DEPLOY-AZURE.md](DEPLOY-AZURE.md)).
+- **Deploy automático pelo GitHub:** workflows prontos; dependem da configuração única do passo 8 do [DEPLOY-AZURE.md](DEPLOY-AZURE.md).
 - **`func start`** (rodar como Function na máquina): não testado.
 - **Frontend:** não tem testes automáticos, nem build no pipeline.
 

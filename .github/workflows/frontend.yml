@@ -1,0 +1,64 @@
+name: frontend
+
+# PR: build (inclui o typecheck) sempre, porque é check obrigatório da main.
+# Push na main: build e publica no Azure Static Web Apps, só quando o frontend mudou.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/frontend.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Typecheck e build
+        env:
+          # endereço da API embutido no site no build (variável do repositório)
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:8000' }}
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: site
+          path: frontend/dist
+          retention-days: 7
+
+  deploy:
+    name: deploy
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-frontend
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ github.token }}
+          action: upload
+          app_location: dist
+          skip_app_build: true
+          skip_api_build: true
