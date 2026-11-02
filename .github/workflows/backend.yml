@@ -39,6 +39,14 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
       - run: pip install -r backend/requirements-dev.txt
+      - name: Banco igual ao de produção (só a extensão PostGIS)
+        # A imagem postgis/postgis instala também topology e o tiger geocoder (geocodificação dos EUA),
+        # que criam tabelas que não existem no Azure; com elas o alembic check acusaria diferença.
+        run: >-
+          psql "postgresql://eudr:eudr@localhost:5432/eudr" -v ON_ERROR_STOP=1
+          -c "DROP EXTENSION IF EXISTS postgis_tiger_geocoder CASCADE"
+          -c "DROP EXTENSION IF EXISTS postgis_topology CASCADE"
+          -c "DROP EXTENSION IF EXISTS fuzzystrmatch CASCADE"
       - name: Testes
         run: python -m pytest backend/tests -q
       - name: Toda mudança de modelo veio com migração (alembic check)
