@@ -1,15 +1,22 @@
 name: backend
 
+# PR: roda os testes sempre (é um check obrigatório da main; com filtro de pasta, um PR só de frontend
+#     ficaria esperando um check que nunca roda).
+# Push na main: testa e publica na Azure Function, só quando o backend mudou.
 on:
   pull_request:
-    paths: ["backend/**", ".github/workflows/backend.yml"]
   push:
     branches: [main]
     paths: ["backend/**", ".github/workflows/backend.yml"]
   workflow_dispatch:
 
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   testes:
+    name: testes
     runs-on: ubuntu-latest
     services:
       db:
@@ -32,14 +39,31 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
       - run: pip install -r backend/requirements-dev.txt
-      - run: python -m pytest backend/tests -q
+      - name: Banco igual ao de produção (só a extensão PostGIS)
+        # A imagem postgis/postgis instala também topology e o tiger geocoder (geocodificação dos EUA),
+        # que criam tabelas que não existem no Azure; com elas o alembic check acusaria diferença.
+        run: >-
+          psql "postgresql://eudr:eudr@localhost:5432/eudr" -v ON_ERROR_STOP=1
+          -c "DROP EXTENSION IF EXISTS postgis_tiger_geocoder CASCADE"
+          -c "DROP EXTENSION IF EXISTS postgis_topology CASCADE"
+          -c "DROP EXTENSION IF EXISTS fuzzystrmatch CASCADE"
+      - name: Testes
+        run: python -m pytest backend/tests -q
+      - name: Toda mudança de modelo veio com migração (alembic check)
+        working-directory: backend
+        run: alembic upgrade head && alembic check
 
   deploy:
+    name: deploy
     needs: testes
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-backend
+      cancel-in-progress: false
     permissions:
-      id-token: write   # login OIDC no Azure, sem segredo de longa duração
+      id-token: write   # login no Azure por OIDC (identidade gerenciada), sem senha guardada
       contents: read
     steps:
       - uses: actions/checkout@v4
@@ -55,3 +79,14 @@ jobs:
           sku: flexconsumption
           remote-build: true
           respect-funcignore: true
+      - name: Smoke test (/health e /health/db, com espera do cold start)
+        env:
+          API: ${{ vars.VITE_API_URL }}
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS -m 30 "$API/health/db" | grep -q '"reachable"'; then
+              echo "API e banco respondendo"; exit 0
+            fi
+            echo "tentativa $i: ainda não respondeu, esperando 15 s"; sleep 15
+          done
+          echo "::error::A API publicada não respondeu /health/db"; exit 1

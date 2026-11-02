@@ -444,17 +444,88 @@ O `.env.azure` **não** entra (está no `.gitignore`). Anote em lugar seguro os 
 
 ---
 
+## Passo 8. Deploy automático pelo GitHub (CI/CD), configuração única
+
+Depois disto, ninguém precisa mais publicar da própria máquina: todo PR aprovado e mesclado na `main` vai para o Azure
+sozinho. O fluxo do dia a dia está no [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+### 8.1 Identidade para o GitHub publicar a API
+
+```bash
+cd ~/Desktop/Sistema-Rastreabilidade-EUDR
+source .env.azure
+bash infra/github-oidc.sh
+```
+
+O script cria uma identidade no Azure que **só** o environment `production` deste repositório pode usar, e com
+permissão **só** de publicar nesta Function App. No fim ele imprime três valores (`AZURE_CLIENT_ID`,
+`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`). Deixe a janela aberta.
+
+Por que não o jeito "normal": a conta Azure for Students não pode registrar aplicativos no Entra ID. A identidade
+gerenciada com credencial federada (OIDC) resolve sem senha nenhuma guardada no GitHub.
+
+### 8.2 Token de publicação do site
+
+```bash
+az staticwebapp secrets list -n $SWA -g $RG --query properties.apiKey -o tsv
+```
+
+Copie o valor (é um segredo; não cole em lugar nenhum além do GitHub).
+
+### 8.3 Cadastrar no GitHub
+
+No repositório: **Settings → Environments → New environment** → nome `production`.
+
+Dentro de `production`, em **Environment secrets**, adicione:
+
+| Nome | Valor |
+|---|---|
+| `AZURE_CLIENT_ID` | do passo 8.1 |
+| `AZURE_TENANT_ID` | do passo 8.1 |
+| `AZURE_SUBSCRIPTION_ID` | do passo 8.1 |
+| `AZURE_STATIC_WEB_APPS_API_TOKEN` | do passo 8.2 |
+
+Em **Settings → Secrets and variables → Actions → Variables** (do repositório, não do environment), adicione:
+
+| Nome | Valor |
+|---|---|
+| `AZURE_FUNCTIONAPP_NAME` | `func-origemcheck-lslater26` |
+| `VITE_API_URL` | `https://func-origemcheck-lslater26.azurewebsites.net` |
+
+### 8.4 Proteger a `main`
+
+**Settings → Branches → Add branch ruleset** (ou "Add rule"), alvo `main`:
+
+- ✅ **Require a pull request before merging** → **Required approvals: 1**
+- ✅ **Require status checks to pass** → adicione `testes` e `build` (eles só aparecem na lista depois de rodarem
+  uma vez; o primeiro PR faz isso)
+- ✅ **Require branches to be up to date before merging**
+- ✅ **Block force pushes**
+- Em **Bypass list**, adicione a si mesma (**Repository admin**): assim você consegue fazer merge dos seus próprios PRs
+  depois dos testes, sem precisar que outra pessoa aprove. Os PRs da colaboradora continuam precisando da sua aprovação.
+
+Confira também em **Settings → Collaborators** se a colaboradora tem permissão **Write**.
+
+### 8.5 Testar
+
+Abra um PR pequeno (por exemplo, uma linha no README). Os checks `backend / testes` e `frontend / build` devem rodar e
+ficar verdes. Faça o merge: na aba **Actions**, os jobs `deploy` não rodam quando só o README mudou (é o esperado).
+O primeiro PR que mexer em `backend/` ou `frontend/` testa o deploy de verdade.
+
+---
+
 ## Dia a dia depois do deploy
 
-Abra o terminal na raiz do projeto e rode `source .env.azure` antes de qualquer um destes.
+Com o CI/CD configurado (passo 8), **publicar é fazer merge na `main`**. Os comandos abaixo ficam como plano B (por
+exemplo, se o GitHub Actions estiver fora do ar). Abra o terminal na raiz do projeto e rode `source .env.azure` antes.
 
-**Publicar uma nova versão do backend:**
+**Publicar uma nova versão do backend (manual):**
 
 ```bash
 cd backend && func azure functionapp publish $APP --python && cd ..
 ```
 
-**Publicar uma nova versão do frontend:**
+**Publicar uma nova versão do frontend (manual):**
 
 ```bash
 cd frontend && VITE_API_URL=https://$API_HOST npm run build && cd ..
