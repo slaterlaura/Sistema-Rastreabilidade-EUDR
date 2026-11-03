@@ -98,6 +98,8 @@ Frontend e backend só conversam por **HTTP com JSON**. O frontend nunca fala di
 
 ## 4. O banco de dados
 
+> Guia completo do banco (onde fica, cada tabela, segurança, backup e consultas prontas): [BANCO-DE-DADOS.md](BANCO-DE-DADOS.md).
+
 ### 4.1 As tabelas e como se relacionam
 
 ```mermaid

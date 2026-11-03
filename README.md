@@ -4,7 +4,7 @@ Cadastro de fornecedores e fazendas, verificação automática de desmatamento p
 e dossiê de origem por embarque. O contexto completo e as regras de negócio estão em [context.md](context.md).
 
 - **Vai contribuir?** Leia o [CONTRIBUTING.md](CONTRIBUTING.md): toda mudança passa por PR, testes automáticos e aprovação; o deploy no Azure é automático no merge.
-- **Como o sistema funciona:** [docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md). **Deploy e infraestrutura:** [docs/DEPLOY-AZURE.md](docs/DEPLOY-AZURE.md).
+- **Como o sistema funciona:** [docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md). **Deploy e infraestrutura:** [docs/DEPLOY-AZURE.md](docs/DEPLOY-AZURE.md). **Banco de dados:** [docs/BANCO-DE-DADOS.md](docs/BANCO-DE-DADOS.md).
 
 ## Como rodar (backend)
 
