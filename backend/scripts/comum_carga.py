@@ -120,3 +120,48 @@ def salvar_geojson(gdf: gpd.GeoDataFrame, destino: Path) -> None:
     if destino.exists():
         destino.unlink()  # o driver GeoJSON não sobrescreve
     gdf.to_file(destino, driver="GeoJSON", COORDINATE_PRECISION=7)
+
+
+# Mapa de calor: tamanho das células de cada nível, em graus (nível 0 ≈ 28 km, nível 1 ≈ 5,5 km).
+NIVEIS_CALOR = {0: 0.25, 1: 0.05}
+
+_SQL_CALOR = """
+INSERT INTO prodes_calor (nivel, lat, lon, area_ha, n)
+SELECT nivel,
+       sum(y * a) / sum(a),            -- centro da célula ponderado pela área desmatada
+       sum(x * a) / sum(a),
+       sum(a),
+       count(*)
+FROM (
+    SELECT x, y, a,
+           unnest(:niveis) AS nivel,
+           unnest(:tamanhos) AS t
+    FROM (
+        SELECT ST_X(c) AS x, ST_Y(c) AS y, a
+        FROM (
+            SELECT ST_Centroid(geom) AS c,
+                   COALESCE(area_km * 100, ST_Area(geom::geography) / 10000) AS a   -- hectares
+            FROM camada_prodes
+            WHERE ano > :corte
+        ) p
+        WHERE a > 0
+    ) q
+) r
+GROUP BY nivel, floor(x / t), floor(y / t)
+"""
+
+
+def atualizar_calor(con, ano_corte: int) -> dict[int, int]:
+    """Recalcula prodes_calor a partir de camada_prodes, tudo dentro do banco.
+
+    `con` é uma conexão SQLAlchemy já em transação. Devolve quantos pontos ficaram em cada nível.
+    """
+    from sqlalchemy import text
+
+    con.execute(text("DELETE FROM prodes_calor"))
+    con.execute(
+        text(_SQL_CALOR),
+        {"niveis": list(NIVEIS_CALOR), "tamanhos": list(NIVEIS_CALOR.values()), "corte": ano_corte},
+    )
+    linhas = con.execute(text("SELECT nivel, count(*) FROM prodes_calor GROUP BY nivel ORDER BY nivel")).all()
+    return {int(nivel): int(total) for nivel, total in linhas}

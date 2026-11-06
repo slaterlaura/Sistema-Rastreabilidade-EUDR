@@ -53,6 +53,7 @@ from sqlalchemy import text  # noqa: E402
 from app.config import settings  # noqa: E402
 from scripts.comum_carga import (  # noqa: E402
     abrir,
+    atualizar_calor,
     formas_da_uf,
     lista_sql as _lista_sql,
     para_wgs84,
@@ -223,6 +224,9 @@ def carregar(gdf: gpd.GeoDataFrame, *, origem: str, bioma: str, uf: str | None, 
                 print(f"{apagadas} feições de cargas anteriores de {alcance} removidas.")
 
         con.execute(text("ANALYZE camada_prodes"))
+        # O mapa de calor (zoom afastado) é derivado da camada: recalcula na mesma transação.
+        pontos = atualizar_calor(con, settings.ano_corte)
+        print("Mapa de calor recalculado: " + ", ".join(f"nível {n}: {q} pontos" for n, q in pontos.items()))
     return versao_id
 
 

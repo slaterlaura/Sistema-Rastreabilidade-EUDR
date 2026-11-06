@@ -7,11 +7,13 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -270,3 +272,22 @@ class Imovel(Base):
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class ProdesCalor(Base):
+    """Desmatamento pós-corte pré-agregado em células, para o mapa de calor com o mapa afastado.
+
+    Recalculada a cada carga do PRODES (scripts/carga_prodes.py ou scripts/agregar_prodes.py).
+    nivel 0 = células de 0,25° (Brasil/estado); nivel 1 = 0,05° (região). Cada linha é o centro da
+    célula ponderado pela área desmatada, com o total de hectares e de polígonos.
+    """
+
+    __tablename__ = "prodes_calor"
+    __table_args__ = (Index("idx_prodes_calor_nivel_lat_lon", "nivel", "lat", "lon"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nivel: Mapped[int] = mapped_column(SmallInteger)
+    lat: Mapped[float] = mapped_column(Float)
+    lon: Mapped[float] = mapped_column(Float)
+    area_ha: Mapped[float] = mapped_column(Float)
+    n: Mapped[int] = mapped_column(Integer)

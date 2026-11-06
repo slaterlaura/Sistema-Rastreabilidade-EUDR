@@ -62,7 +62,7 @@ def limpar(banco):
     with engine.begin() as con:
         con.execute(
             text(
-                "TRUNCATE usuario, fornecedor, fazenda, documento, camada_versao, camada_prodes, imovel, imovel_versao, "
+                "TRUNCATE usuario, fornecedor, fazenda, documento, camada_versao, camada_prodes, imovel, imovel_versao, prodes_calor, "
                 "embarque, parcela, dossie RESTART IDENTITY CASCADE"
             )
         )
