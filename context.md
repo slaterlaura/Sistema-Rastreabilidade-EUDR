@@ -199,6 +199,7 @@ usuario ──< fornecedor ──< fazenda ──< parcela >── embarque ─�
                 └──< documento >┘     (documento pertence a um fornecedor OU a uma fazenda)
 
 camada_versao ──< camada_prodes       (independente; a fazenda guarda a versão que a verificou)
+imovel_versao ──< imovel              (imóveis do CAR: camada comum, "adotável" como fazenda)
 ```
 
 **Vocabulário.** *Fazenda* é a área produtiva com geometria, verificada contra o PRODES.
@@ -224,6 +225,14 @@ tamanho_bytes, sha256, validade, criado_em. Aceita PDF, PNG e JPG (tipo decidido
 **`camada_versao`** — id, origem, bioma, uf, arquivo, n_feicoes, carregada_em (uma linha por carga)
 
 **`camada_prodes`** — id, versao_id (FK), `geom GEOMETRY(Geometry, 4326)`, ano, class_name, area_km
+
+**`imovel_versao`** — id, origem (`SICAR`), uf, arquivo, n_feicoes, carregada_em (uma linha por carga)
+
+**`imovel`** — id, `cod_imovel` (único), municipio, uf, area_ha, situacao (`AT`/`PE`/`CA`), condicao, versao_id,
+`geom GEOMETRY(Geometry, 4326)`. **Camada comum a todos os usuários** (sem `usuario_id`), como o PRODES: o
+exportador "adota" um imóvel ao cadastrar a fazenda (o desenho e o CAR vêm daqui); status, fornecedor,
+documentos e embarques continuam na `fazenda`, que é de cada conta (R6 preservada). Carga por upsert em
+`cod_imovel` (`scripts/carga_imoveis.py`): carregar outro município soma, recarregar atualiza.
 
 **`embarque`** — id, usuario_id (FK), identificacao (única por usuário), data_embarque, destino,
 `status` ∈ `rascunho | fechado`, fechado_em, criado_em
@@ -308,6 +317,9 @@ GET    /dossies/{id}/geojson                → Content-Disposition: attachment
 GET    /dossies/{id}/pdf                    → Content-Disposition: attachment
 
 GET    /camada/prodes?bbox=o,s,l,n          → supressão pós-corte do recorte, simplificada, para o mapa
+GET    /camada/versao                       → versão das cargas (PRODES e imóveis), usada no cache do mapa
+GET    /imoveis?bbox=o,s,l,n                → imóveis do CAR do recorte (zoom alto), para o mapa
+GET    /imoveis/{cod_imovel}                → geometria completa do imóvel, para adotá-lo como fazenda
 ```
 
 ### Transições de estado

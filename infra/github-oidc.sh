@@ -21,11 +21,20 @@ CLIENT_ID=$(az identity show -n "$IDENTIDADE" -g "$RG" --query clientId -o tsv)
 PRINCIPAL_ID=$(az identity show -n "$IDENTIDADE" -g "$RG" --query principalId -o tsv)
 
 echo "==> 2/3 Credencial federada: só o environment 'production' deste repositório pode usar a identidade"
-az identity federated-credential create \
-  --name github-production --identity-name "$IDENTIDADE" --resource-group "$RG" \
-  --issuer https://token.actions.githubusercontent.com \
-  --subject "repo:${REPO}:environment:production" \
-  --audiences api://AzureADTokenExchange --output none
+# O GitHub pode mandar o "subject" em dois formatos: o clássico (repo:dono/repo:...) e o novo, com os IDs
+# numéricos (repo:dono@ID/repo@ID:...), que passou a valer em repositórios recentes. Cadastramos os dois;
+# se faltar o certo, o login falha com AADSTS700213 "No matching federated identity record".
+IDS=$(curl -fsS "https://api.github.com/repos/${REPO}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['owner']['id'], d['id'])")
+DONO_ID=${IDS% *}; REPO_ID=${IDS#* }
+DONO=${REPO%%/*}; NOME_REPO=${REPO#*/}
+for par in "github-production|repo:${REPO}:environment:production" \
+           "github-production-ids|repo:${DONO}@${DONO_ID}/${NOME_REPO}@${REPO_ID}:environment:production"; do
+  az identity federated-credential create \
+    --name "${par%%|*}" --identity-name "$IDENTIDADE" --resource-group "$RG" \
+    --issuer https://token.actions.githubusercontent.com \
+    --subject "${par#*|}" \
+    --audiences api://AzureADTokenExchange --output none
+done
 
 echo "==> 3/3 Permissão mínima: publicar só nesta Function App"
 APP_ID=$(az functionapp list -g "$RG" --query "[?name=='$APP'].id | [0]" -o tsv)

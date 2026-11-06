@@ -4,26 +4,27 @@ Cadastro de fornecedores e fazendas, verificação automática de desmatamento p
 e dossiê de origem por embarque. O contexto completo e as regras de negócio estão em [context.md](context.md).
 
 - **Vai contribuir?** Leia o [CONTRIBUTING.md](CONTRIBUTING.md): toda mudança passa por PR, testes automáticos e aprovação; o deploy no Azure é automático no merge.
-- **Como o sistema funciona:** [docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md). **Deploy e infraestrutura:** [docs/DEPLOY-AZURE.md](docs/DEPLOY-AZURE.md).
+- **Como o sistema funciona:** [docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md). **Deploy e infraestrutura:** [docs/DEPLOY-AZURE.md](docs/DEPLOY-AZURE.md). **Banco de dados:** [docs/BANCO-DE-DADOS.md](docs/BANCO-DE-DADOS.md).
 
-## Como rodar (backend)
+## Acesse o sistema
 
-```bash
-cp .env.example .env                      # ajuste as senhas; DATABASE_URL usa a mesma senha do Postgres
-docker compose up -d                      # PostgreSQL 16 + PostGIS na porta 5433
+| | Link |
+|---|---|
+| **Site** | https://kind-pebble-04924410f.3.azurestaticapps.net |
+| **API (FastAPI): documentação interativa** | https://func-origemcheck-lslater26.azurewebsites.net/docs |
+| API: saúde do serviço e do banco | https://func-origemcheck-lslater26.azurewebsites.net/health/db |
 
-cd backend
-python3.13 -m venv .venv && source .venv/bin/activate   # Python 3.13: o mesmo do Azure Functions
-pip install -r requirements-dev.txt
+**Login de demonstração:** `demo@exemplo.com.br` / `demo-origemcheck-2026`
 
-alembic upgrade head                      # cria o schema (única fonte: migrações Alembic)
-python scripts/carga_prodes.py --arquivo ../data/processed/MataAtlantica_desmatamento_SP.json \
-    --bioma "Mata Atlantica" --uf SP      # carrega a camada de supressão
-python scripts/seed.py                    # opcional: dados de demonstração
-uvicorn app.main:app --reload             # http://localhost:8000/docs
-```
+A primeira chamada depois de um tempo parado pode levar alguns segundos (a API "acorda").
 
-### Mais dados de desmatamento (PRODES)
+Telas: quadro de fazendas (lista com filtros + mapa com a supressão do PRODES hachurada), cadastro com desenho
+de polígono ou ponto, fornecedores com documentos, composição de embarque (fazendas recusadas visíveis, com o motivo),
+evidências e dossiês congelados.
+
+Para rodar na sua máquina (banco local, backend e frontend), siga o [CONTRIBUTING.md](CONTRIBUTING.md), seção 1.
+
+## Mais dados de desmatamento (PRODES)
 
 Baixe o "Incremento anual de desmatamento" do bioma no TerraBrasilis e salve em `data/raw/` (fora do git).
 **Não precisa converter para GeoJSON**: o script lê o `.zip` ou o `.shp` direto e recorta pela UF e pelos anos
@@ -43,22 +44,6 @@ python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation.zip --
 ```
 
 Depois, no app: **Fazendas → Reprocessar camada**. Opções: `python scripts/carga_prodes.py --help`.
-
-Login da demonstração: `demo@exemplo.com.br` / `demo-origemcheck-2026`.
-
-## Como rodar (frontend)
-
-```bash
-cd frontend
-cp .env.example .env          # VITE_API_URL=http://localhost:8000 (ou a URL da Function)
-npm install
-npm run dev                   # http://localhost:5173
-npm run build                 # typecheck + build de produção em dist/ (vai para o Static Web Apps)
-```
-
-Telas: quadro de fazendas (lista com filtros + mapa com a supressão do PRODES hachurada), cadastro com desenho
-de polígono ou ponto, fornecedores com documentos, composição de embarque (fazendas recusadas visíveis, com o motivo),
-evidências e dossiês congelados.
 
 ## Testes
 

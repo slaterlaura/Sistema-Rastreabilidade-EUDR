@@ -23,7 +23,7 @@ import {
 import { api } from "@/lib/api";
 import { CENTRO_PADRAO, limitesDe } from "@/lib/geo";
 import { COR_DESTAQUE, COR_SUPRESSAO, STATUS } from "@/lib/status";
-import type { CamadaSupressao as Camada, GeometriaFazenda, StatusFazenda } from "@/lib/tipos";
+import type { CamadaImovel, CamadaSupressao as Camada, GeometriaFazenda, ImovelResumo, StatusFazenda } from "@/lib/tipos";
 import { cn } from "@/lib/utils";
 
 /** Padrão SVG referenciado pela camada de supressão (fill: url(#hachura-supressao)). */
@@ -81,6 +81,7 @@ export function Mapa({ className, children, zoomInicial = 4 }: MapaProps) {
         </LayersControl.BaseLayer>
       </LayersControl>
       <Pane name="supressao" style={{ zIndex: 350 }} />
+      <Pane name="imoveis" style={{ zIndex: 360 }} />
       {children}
     </MapContainer>
   );
@@ -97,6 +98,7 @@ export interface VersaoCamada {
   versao: number | null;
   atualizada_em: string | null;
   biomas: string[];
+  imoveis_versao: number | null;
 }
 
 /** Uma consulta por sessão (5 min); "Reprocessar camada" a invalida. */
@@ -109,41 +111,42 @@ export function useVersaoCamada(habilitada = true) {
   });
 }
 
-const ZOOM_MINIMO_CAMADA = 10;
-const PASSO_GRADE = 0.25; // arredonda o recorte para reaproveitar respostas em cache
-
-function recorteArredondado(mapa: L.Map): string {
+function recorteArredondado(mapa: L.Map, passo: number): string {
   const b = mapa.getBounds();
-  const baixo = (v: number) => Math.floor(v / PASSO_GRADE) * PASSO_GRADE;
-  const alto = (v: number) => Math.ceil(v / PASSO_GRADE) * PASSO_GRADE;
+  const baixo = (v: number) => Math.floor(v / passo) * passo;
+  const alto = (v: number) => Math.ceil(v / passo) * passo;
   return [baixo(b.getWest()), baixo(b.getSouth()), alto(b.getEast()), alto(b.getNorth())]
     .map((v) => v.toFixed(2))
     .join(",");
 }
 
 /**
- * Busca a supressão pós-2020 só do recorte visível e só com zoom suficiente.
- * Cada busca é uma execução da Function: recortes iguais vêm do cache, e o mapa
- * não consulta nada enquanto está afastado.
+ * Busca uma camada de referência só no recorte visível e só com zoom suficiente.
+ * Cada busca é uma execução da Function: o recorte é arredondado numa grade (recortes iguais vêm do
+ * cache), o mapa não consulta nada enquanto está afastado, e a versão da carga vai na URL para o
+ * navegador não reaproveitar dados de uma carga antiga.
  */
-export function CamadaSupressao({
-  visivel,
-  onEstado,
-}: {
+function useCamadaRecortada<T extends { truncado: boolean }>(opcoes: {
+  chave: string;
+  rota: string;
+  zoomMinimo: number;
+  passo: number;
   visivel: boolean;
+  versaoDe: (v: VersaoCamada) => number | null;
   onEstado?: (estado: EstadoCamada) => void;
 }) {
+  const { chave, rota, zoomMinimo, passo, visivel, versaoDe, onEstado } = opcoes;
   const mapa = useMap();
-  const [vista, setVista] = useState(() => ({ zoom: mapa.getZoom(), recorte: recorteArredondado(mapa) }));
+  const [vista, setVista] = useState(() => ({ zoom: mapa.getZoom(), recorte: recorteArredondado(mapa, passo) }));
   const temporizador = useRef<number>();
 
   const lerVista = useCallback(() => {
     window.clearTimeout(temporizador.current);
     temporizador.current = window.setTimeout(
-      () => setVista({ zoom: mapa.getZoom(), recorte: recorteArredondado(mapa) }),
+      () => setVista({ zoom: mapa.getZoom(), recorte: recorteArredondado(mapa, passo) }),
       350,
     );
-  }, [mapa]);
+  }, [mapa, passo]);
 
   useMapEvents({ moveend: lerVista });
 
@@ -154,13 +157,12 @@ export function CamadaSupressao({
     return () => window.clearTimeout(temporizador.current);
   }, [lerVista]);
 
-  const habilitada = visivel && vista.zoom >= ZOOM_MINIMO_CAMADA;
-  // A versão vai na URL: depois de uma carga nova do PRODES, o navegador não reaproveita a camada velha.
+  const habilitada = visivel && vista.zoom >= zoomMinimo;
   const { data: versao } = useVersaoCamada(visivel);
-  const v = versao?.versao ?? 0;
+  const v = versao ? (versaoDe(versao) ?? 0) : 0;
   const { data, isFetching, error } = useQuery({
-    queryKey: ["camada-prodes", v, vista.recorte],
-    queryFn: () => api.get<Camada>(`/camada/prodes?bbox=${vista.recorte}&v=${v}`),
+    queryKey: [chave, v, vista.recorte],
+    queryFn: () => api.get<T>(`${rota}?bbox=${vista.recorte}&v=${v}`),
     enabled: habilitada && versao !== undefined,
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000,
@@ -170,25 +172,87 @@ export function CamadaSupressao({
   useEffect(() => {
     onEstado?.({
       carregando: habilitada && isFetching,
-      aproximar: visivel && vista.zoom < ZOOM_MINIMO_CAMADA,
+      aproximar: visivel && vista.zoom < zoomMinimo,
       truncado: Boolean(habilitada && data?.truncado),
       erro: error ? (error as Error).message : null,
     });
-  }, [onEstado, habilitada, isFetching, visivel, vista.zoom, data?.truncado, error]);
+  }, [onEstado, habilitada, isFetching, visivel, vista.zoom, zoomMinimo, data?.truncado, error]);
 
-  if (!habilitada || !data) return null;
+  return { data: habilitada ? data : undefined, chaveRender: `${v}-${vista.recorte}-${data ? 1 : 0}` };
+}
+
+/** Supressão do PRODES posterior à data de corte, hachurada, por baixo das fazendas. */
+export function CamadaSupressao({ visivel, onEstado }: { visivel: boolean; onEstado?: (estado: EstadoCamada) => void }) {
+  const { data, chaveRender } = useCamadaRecortada<Camada>({
+    chave: "camada-prodes",
+    rota: "/camada/prodes",
+    zoomMinimo: 10,
+    passo: 0.25,
+    visivel,
+    versaoDe: (v) => v.versao,
+    onEstado,
+  });
+  if (!data) return null;
   return (
     <GeoJSON
-      key={`${v}-${vista.recorte}-${data.features.length}`}
+      key={`${chaveRender}-${data.features.length}`}
       data={data as GeoJSON.FeatureCollection}
       pane="supressao"
       interactive={false}
-      style={() => ({
-        color: COR_SUPRESSAO,
-        weight: 0.8,
-        opacity: 0.7,
-        className: "supressao-hachura",
-      })}
+      style={() => ({ color: COR_SUPRESSAO, weight: 0.8, opacity: 0.7, className: "supressao-hachura" })}
+    />
+  );
+}
+
+/**
+ * Imóveis do CAR (camada comum a todos), em contorno cinza fino.
+ * Com onSelecionar, cada imóvel fica clicável (para adotá-lo como fazenda).
+ */
+export function CamadaImoveis({
+  visivel,
+  onEstado,
+  onSelecionar,
+  selecionado,
+}: {
+  visivel: boolean;
+  onEstado?: (estado: EstadoCamada) => void;
+  onSelecionar?: (imovel: ImovelResumo) => void;
+  selecionado?: string | null;
+}) {
+  const { data, chaveRender } = useCamadaRecortada<CamadaImovel>({
+    chave: "camada-imoveis",
+    rota: "/imoveis",
+    zoomMinimo: 12,
+    passo: 0.1,
+    visivel,
+    versaoDe: (v) => v.imoveis_versao,
+    onEstado,
+  });
+  if (!data) return null;
+  const clicavel = Boolean(onSelecionar);
+  return (
+    <GeoJSON
+      key={`${chaveRender}-${data.features.length}-${selecionado ?? ""}-${clicavel}`}
+      data={data as GeoJSON.FeatureCollection}
+      pane="imoveis"
+      interactive={clicavel}
+      style={(f) => {
+        const ativo = f?.properties?.cod_imovel === selecionado;
+        return {
+          color: ativo ? COR_DESTAQUE : "#475569",
+          weight: ativo ? 2.5 : 0.9,
+          opacity: ativo ? 1 : 0.75,
+          fill: clicavel,
+          fillColor: ativo ? COR_DESTAQUE : "#94a3b8",
+          fillOpacity: ativo ? 0.18 : clicavel ? 0.04 : 0,
+        };
+      }}
+      onEachFeature={(feature, camada) => {
+        const p = feature.properties as ImovelResumo;
+        const area = p.area_ha != null ? ` · ${p.area_ha.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ha` : "";
+        camada.bindTooltip(`<span class="font-mono text-[11px]">${p.cod_imovel}${area}</span>`, { sticky: true });
+        if (onSelecionar) camada.on("click", () => onSelecionar(p));
+      }}
     />
   );
 }
@@ -276,7 +340,7 @@ export function AjustarTamanho() {
   return null;
 }
 
-export function LegendaMapa({ comSupressao = true }: { comSupressao?: boolean }) {
+export function LegendaMapa({ comSupressao = true, comImoveis = false }: { comSupressao?: boolean; comImoveis?: boolean }) {
   return (
     <div className="pointer-events-auto rounded-lg border border-slate-200 bg-white/95 px-3 py-2 font-mono text-[10px] text-slate-600 shadow-sm">
       <ul className="space-y-1">
@@ -303,22 +367,36 @@ export function LegendaMapa({ comSupressao = true }: { comSupressao?: boolean })
             SUPRESSÃO PÓS-2020
           </li>
         ) : null}
+        {comImoveis ? (
+          <li className="flex items-center gap-2">
+            <span aria-hidden="true" className="inline-block h-3 w-4 rounded-sm border border-slate-500" />
+            IMÓVEL DO CAR
+          </li>
+        ) : null}
       </ul>
     </div>
   );
 }
 
-/** Aviso sobre o estado da camada de supressão, sobreposto ao mapa. */
-export function AvisoCamada({ estado, visivel }: { estado: EstadoCamada | null; visivel: boolean }) {
+/** Aviso sobre o estado de uma camada de referência, sobreposto ao mapa. */
+export function AvisoCamada({
+  estado,
+  visivel,
+  nome = "supressão do PRODES",
+}: {
+  estado: EstadoCamada | null;
+  visivel: boolean;
+  nome?: string;
+}) {
   if (!visivel || !estado) return null;
   const texto = estado.erro
-    ? `Camada de supressão indisponível: ${estado.erro}`
+    ? `${nome}: indisponível (${estado.erro})`
     : estado.aproximar
-      ? "Aproxime o mapa para ver a supressão do PRODES"
+      ? `Aproxime o mapa para ver ${nome.startsWith("imóveis") ? "os" : "a"} ${nome}`
       : estado.carregando
-        ? "Carregando supressão…"
+        ? `Carregando ${nome}…`
         : estado.truncado
-          ? "Mostrando só os maiores polígonos de supressão; aproxime para ver todos"
+          ? `Mostrando só parte de ${nome}; aproxime para ver tudo`
           : null;
   if (!texto) return null;
   return (

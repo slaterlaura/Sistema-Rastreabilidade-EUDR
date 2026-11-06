@@ -51,4 +51,4 @@ def test_versao_da_camada_muda_a_cada_carga(client, auth, camada):
 
 
 def test_versao_sem_camada_carregada(client, auth):
-    assert client.get("/camada/versao", headers=auth).json() == {"versao": None, "atualizada_em": None, "biomas": []}
+    assert client.get("/camada/versao", headers=auth).json() == {"versao": None, "atualizada_em": None, "biomas": [], "imoveis_versao": None}
