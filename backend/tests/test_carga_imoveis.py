@@ -125,3 +125,38 @@ def test_zip_e_somente_converter(tmp_path):
     colecao = json.loads(saida.read_text())
     assert [f["properties"]["cod_imovel"] for f in colecao["features"]] == ["SP-3500105-CCC"]
     assert _imoveis() == []
+
+
+def test_carga_em_lotes_pequenos_carrega_tudo(tmp_path):
+    shp = _shapefile(tmp_path, "lotes", {
+        "cod_imovel": [f"SP-3500105-L{i}" for i in range(7)],
+        "num_area": [float(i + 1) for i in range(7)],
+    })
+    carga.executar(["--arquivo", str(shp), "--lote", "2"])  # 4 lotes: 2+2+2+1
+    assert len(_imoveis()) == 7
+    with engine.connect() as con:
+        assert con.execute(text("SELECT n_feicoes FROM imovel_versao")).scalar_one() == 7
+
+
+def test_mesmo_imovel_em_lotes_diferentes_fica_com_o_ultimo(tmp_path):
+    shp = _shapefile(tmp_path, "rep_lotes", {
+        "cod_imovel": ["SP-1-A", "SP-1-B", "SP-1-A"],
+        "num_area": [1.0, 2.0, 9.0],
+    })
+    carga.executar(["--arquivo", str(shp), "--lote", "2"])  # A no 1º lote e de novo no 2º
+    linhas = {l.cod_imovel: float(l.area_ha) for l in _imoveis()}
+    assert linhas == {"SP-1-A": 9.0, "SP-1-B": 2.0}
+
+
+def test_le_geojson_grande_em_lotes(tmp_path):
+    """O formato dos arquivos do Drive: GeoJSON do SICAR (AREA_IMOVEL), em WGS84."""
+    gdf = gpd.GeoDataFrame(
+        {"cod_imovel": [f"MG-3100104-G{i}" for i in range(5)], "num_area": [10.0] * 5,
+         "ind_status": ["AT"] * 5, "municipio": ["Abadia"] * 5, "cod_estado": ["MG"] * 5},
+        geometry=[box(-47 + i * 0.01, -19, -46.995 + i * 0.01, -18.995) for i in range(5)], crs="EPSG:4326",
+    )
+    arquivo = tmp_path / "minasgerais.geojson"
+    gdf.to_file(arquivo, driver="GeoJSON")
+    lotes, resumo = carga.ler_em_lotes(arquivo, lote=2)
+    tamanhos = [len(l) for l in lotes]
+    assert tamanhos == [2, 2, 1] and resumo.lidas == 5 and resumo.crs_origem
