@@ -159,3 +159,22 @@ export interface CamadaSupressao {
     properties: { id: number; ano: number; area_km: number | null };
   }[];
 }
+
+export interface ImovelResumo {
+  cod_imovel: string;
+  municipio: string | null;
+  uf: string | null;
+  area_ha: number | null;
+  situacao: string | null;
+}
+
+export interface ImovelDetalhe extends ImovelResumo {
+  condicao: string | null;
+  geometry: GeometriaFazenda;
+}
+
+export interface CamadaImovel {
+  type: "FeatureCollection";
+  truncado: boolean;
+  features: { type: "Feature"; geometry: Geometry; properties: ImovelResumo }[];
+}

@@ -514,6 +514,39 @@ O primeiro PR que mexer em `backend/` ou `frontend/` testa o deploy de verdade.
 
 ---
 
+## Passo 9. Camada de imóveis do CAR e usuário de carga (uma vez)
+
+Antes de mesclar o PR da camada de imóveis, aplique a migração nova no Azure:
+
+```bash
+cd ~/Desktop/Sistema-Rastreabilidade-EUDR && source .env.azure
+cd backend && source .venv/bin/activate
+DATABASE_URL="$DATABASE_URL_AZURE" alembic upgrade head      # cria imovel e imovel_versao
+cd ..
+```
+
+Crie o usuário de banco **`carga`**, que só mexe nas camadas (PRODES e imóveis) e não enxerga contas, fazendas nem
+embarques. É ele que a colaboradora usa para carregar dados:
+
+```bash
+SENHA_CARGA=$(openssl rand -hex 16)
+echo "export SENHA_CARGA=$SENHA_CARGA" >> .env.azure
+docker run --rm --platform linux/amd64 -v "$PWD/infra":/infra -e PGPASSWORD="$PG_SENHA" -e PGSSLMODE=require \
+  postgis/postgis:16-3.4 psql -h $PG_HOST -U $PG_ADMIN -d eudr \
+  -f /infra/papel-carga.sql -c "ALTER ROLE carga PASSWORD '$SENHA_CARGA'"
+echo "postgresql+psycopg2://carga:$SENHA_CARGA@$PG_HOST:5432/eudr?sslmode=require"
+```
+
+A última linha é a `DATABASE_URL` de carga: mande para a colaboradora por um canal privado (não pelo GitHub).
+Libere também o IP dela no firewall (ela descobre o dela em https://api.ipify.org):
+
+```bash
+az postgres flexible-server firewall-rule create -g $RG --server-name $PG_SERVER \
+  --name colaboradora-$(date +%Y%m%d) --start-ip-address IP_DELA --end-ip-address IP_DELA
+```
+
+---
+
 ## Dia a dia depois do deploy
 
 Com o CI/CD configurado (passo 8), **publicar é fazer merge na `main`**. Os comandos abaixo ficam como plano B (por

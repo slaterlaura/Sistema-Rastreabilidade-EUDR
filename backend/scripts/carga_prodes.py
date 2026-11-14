@@ -46,50 +46,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import unicodedata  # noqa: E402
-
 import geopandas as gpd  # noqa: E402
-import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-import pyogrio  # noqa: E402
-import shapely  # noqa: E402
-from shapely.ops import unary_union  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from app.config import settings  # noqa: E402
+from scripts.comum_carga import (  # noqa: E402
+    abrir,
+    formas_da_uf,
+    lista_sql as _lista_sql,
+    para_wgs84,
+    primeiro_campo,
+    reparar as _reparar,
+    salvar_geojson,
+    sigla_valida,
+)
 
 CAMPOS_ANO = ("year", "ano", "ANO", "YEAR")
 CAMPOS_UF = ("state", "uf", "estado", "STATE", "UF", "ESTADO")
 CAMPOS_CLASSE = ("main_class", "MAIN_CLASS", "classe")
 CLASSES_PADRAO = ("DESMATAMENTO",)  # EUDR: conversão para uso agrícola; represa e queimada não contam
 LOTE_INSERCAO = 5000
-
-# O TerraBrasilis não é consistente: o Cerrado traz "MINAS GERAIS", a Mata Atlântica traz "MG",
-# o Pampa mistura "RS" e "RIO GRANDE DO SUL". O filtro aceita todas as formas.
-UFS = {
-    "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas", "BA": "Bahia", "CE": "Ceará",
-    "DF": "Distrito Federal", "ES": "Espírito Santo", "GO": "Goiás", "MA": "Maranhão",
-    "MT": "Mato Grosso", "MS": "Mato Grosso do Sul", "MG": "Minas Gerais", "PA": "Pará",
-    "PB": "Paraíba", "PR": "Paraná", "PE": "Pernambuco", "PI": "Piauí", "RJ": "Rio de Janeiro",
-    "RN": "Rio Grande do Norte", "RS": "Rio Grande do Sul", "RO": "Rondônia", "RR": "Roraima",
-    "SC": "Santa Catarina", "SP": "São Paulo", "SE": "Sergipe", "TO": "Tocantins",
-}
-
-
-def _sem_acento(s: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
-
-
-def formas_da_uf(sigla: str) -> list[str]:
-    """Todas as grafias com que a UF aparece nos arquivos do PRODES."""
-    nome = UFS[sigla]
-    formas = {sigla, sigla.lower(), nome, nome.upper(), _sem_acento(nome), _sem_acento(nome).upper()}
-    return sorted(formas)
-
-
-def _lista_sql(valores) -> str:
-    return ", ".join("'" + v.replace("'", "''") + "'" for v in valores)
-
 
 @dataclass
 class Resumo:
@@ -113,41 +90,6 @@ def _ano_final(valor) -> int | None:
     return int(anos[-1]) if anos else None
 
 
-def _poligonos(geom):
-    """Repara a geometria e devolve só a parte poligonal (ou None)."""
-    if geom is None or geom.is_empty:
-        return None
-    geom = shapely.make_valid(geom)
-    if geom.geom_type in ("Polygon", "MultiPolygon"):
-        return geom
-    if geom.geom_type == "GeometryCollection":
-        partes = [g for g in geom.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
-        return unary_union(partes) if partes else None
-    return None
-
-
-def _reparar(geometrias: np.ndarray) -> np.ndarray:
-    """Versão vetorizada de _poligonos: só as que não ficam poligonais passam pelo caminho lento."""
-    validas = shapely.make_valid(geometrias)
-    tipos = shapely.get_type_id(validas)
-    lentas = ~np.isin(tipos, (3, 6))  # 3 = Polygon, 6 = MultiPolygon
-    if lentas.any():
-        validas[lentas] = [_poligonos(g) for g in geometrias[lentas]]
-    validas[shapely.is_empty(validas)] = None
-    return validas
-
-
-def _escolher_camada(caminho: Path, camada: str | None) -> str | None:
-    camadas = [nome for nome, _ in pyogrio.list_layers(caminho)]
-    if camada:
-        if camada not in camadas:
-            raise SystemExit(f"Camada '{camada}' não existe em {caminho.name}. Camadas: {camadas}")
-        return camada
-    if len(camadas) > 1:
-        raise SystemExit(f"{caminho.name} tem {len(camadas)} camadas; escolha uma com --camada: {camadas}")
-    return camadas[0] if camadas else None
-
-
 def ler_camada(
     caminho: Path,
     *,
@@ -162,13 +104,7 @@ def ler_camada(
     classes=None carrega todas as classes.
     """
     resumo = Resumo()
-    try:
-        camada = _escolher_camada(caminho, camada)
-        info = pyogrio.read_info(caminho, layer=camada)
-    except SystemExit:
-        raise
-    except Exception as exc:  # arquivo corrompido, formato desconhecido etc.
-        raise SystemExit(f"Não consegui abrir {caminho}: {exc}")
+    camada, info = abrir(caminho, camada)
     resumo.camada = camada or ""
 
     campos = list(info["fields"])
@@ -181,10 +117,8 @@ def ler_camada(
 
     clausulas: list[str] = []
     if uf:
-        sigla = uf.upper()
-        if sigla not in UFS:
-            raise SystemExit(f"--uf deve ser a sigla de um estado (ex.: MG); recebi '{uf}'.")
-        resumo.campo_uf = next((c for c in CAMPOS_UF if c in campos), None)
+        sigla = sigla_valida(uf)
+        resumo.campo_uf = primeiro_campo(campos, CAMPOS_UF)
         if resumo.campo_uf:
             resumo.filtro_uf = sigla
             clausulas.append(f"\"{resumo.campo_uf}\" IN ({_lista_sql(formas_da_uf(sigla))})")
@@ -208,15 +142,8 @@ def ler_camada(
     gdf = gpd.read_file(caminho, layer=camada, where=" AND ".join(clausulas) or None)
     resumo.lidas = len(gdf)
 
-    if gdf.crs is None:
-        if not crs_origem:
-            raise SystemExit(
-                "O arquivo não informa o sistema de coordenadas (shapefile sem .prj?). "
-                "Informe --crs-origem, por exemplo EPSG:4674 (SIRGAS 2000, o do TerraBrasilis)."
-            )
-        gdf = gdf.set_crs(crs_origem)
-    resumo.crs_origem = gdf.crs.to_string()
-    gdf = gdf.to_crs(4326)
+    resumo.crs_origem = gdf.crs.to_string() if gdf.crs is not None else (crs_origem or "")
+    gdf = para_wgs84(gdf, crs_origem)
 
     bruto = gdf[campo_ano]
     gdf["ano"] = bruto.map(_ano_final)
@@ -243,13 +170,6 @@ def ler_camada(
         crs=4326,
     ).rename_geometry("geom")
     return saida, resumo
-
-
-def salvar_geojson(gdf: gpd.GeoDataFrame, destino: Path) -> None:
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    if destino.exists():
-        destino.unlink()  # o driver GeoJSON não sobrescreve
-    gdf.to_file(destino, driver="GeoJSON", COORDINATE_PRECISION=7)
 
 
 def carregar(gdf: gpd.GeoDataFrame, *, origem: str, bioma: str, uf: str | None, arquivo: str, manter_anteriores: bool) -> int:

@@ -83,10 +83,19 @@ jobs:
         env:
           API: ${{ vars.VITE_API_URL }}
         run: |
+          if [ -z "$API" ]; then
+            echo "::error::A variável VITE_API_URL está vazia. Cadastre em Settings → Secrets and variables → Actions → Variables."
+            exit 1
+          fi
+          API="${API%/}"
+          echo "Testando $API/health/db"
           for i in $(seq 1 12); do
-            if curl -fsS -m 30 "$API/health/db" | grep -q '"reachable"'; then
+            RESPOSTA=$(curl -sS -m 30 "$API/health/db" 2>&1 || true)
+            echo "tentativa $i: $RESPOSTA"
+            if echo "$RESPOSTA" | grep -q '"reachable"'; then
               echo "API e banco respondendo"; exit 0
             fi
-            echo "tentativa $i: ainda não respondeu, esperando 15 s"; sleep 15
+            sleep 15
           done
-          echo "::error::A API publicada não respondeu /health/db"; exit 1
+          echo "::error::A API publicada ($API) não respondeu /health/db. Se respondeu 'unreachable', o banco pode estar parado."
+          exit 1

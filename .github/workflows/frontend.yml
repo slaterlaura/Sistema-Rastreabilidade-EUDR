@@ -28,6 +28,16 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: Endereço da API definido (só para publicar)
+        if: github.event_name != 'pull_request'
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: |
+          if [ -z "$VITE_API_URL" ]; then
+            echo "::error::A variável VITE_API_URL está vazia neste job. Ela precisa existir no nível do REPOSITÓRIO (Settings → Secrets and variables → Actions → Variables), não só dentro do environment production. Sem ela o site seria publicado apontando para localhost."
+            exit 1
+          fi
+          echo "Site será gerado apontando para $VITE_API_URL"
       - name: Typecheck e build
         env:
           # endereço da API embutido no site no build (variável do repositório)

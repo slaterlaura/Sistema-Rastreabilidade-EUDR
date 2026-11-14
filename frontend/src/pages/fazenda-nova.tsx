@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import {
   AjustarTamanho,
   AvisoCamada,
+  CamadaImoveis,
   CamadaSupressao,
   DefinicoesHachura,
   Enquadrar,
@@ -21,7 +22,7 @@ import {
 import { Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useFazendas, useFornecedores, useInvalidarCadastro } from "@/lib/consultas";
-import type { Fazenda } from "@/lib/tipos";
+import type { Fazenda, ImovelDetalhe, ImovelResumo } from "@/lib/tipos";
 
 export default function PaginaNovaFazenda() {
   const navegar = useNavigate();
@@ -34,6 +35,29 @@ export default function PaginaNovaFazenda() {
   const desenho = useDesenho();
   const [estadoCamada, setEstadoCamada] = useState<EstadoCamada | null>(null);
   const aoMudarCamada = useCallback((e: EstadoCamada) => setEstadoCamada(e), []);
+  const [estadoImoveis, setEstadoImoveis] = useState<EstadoCamada | null>(null);
+  const aoMudarImoveis = useCallback((e: EstadoCamada) => setEstadoImoveis(e), []);
+  const [erroImovel, setErroImovel] = useState<string | null>(null);
+  const modoImovel = desenho.modo === "imovel";
+
+  /** Adota um imóvel do CAR: o desenho e os dados cadastrais vêm da base comum. */
+  async function escolherImovel(resumo: ImovelResumo) {
+    setErroImovel(null);
+    try {
+      const imovel = await api.get<ImovelDetalhe>(`/imoveis/${encodeURIComponent(resumo.cod_imovel)}`);
+      desenho.adotar(imovel);
+      const opcoes = { shouldDirty: true, shouldValidate: form.formState.isSubmitted };
+      form.setValue("car_codigo", imovel.cod_imovel, opcoes);
+      if (imovel.municipio) form.setValue("municipio", imovel.municipio, opcoes);
+      if (imovel.uf) form.setValue("uf", imovel.uf, opcoes);
+      if (imovel.area_ha != null) form.setValue("area_declarada_ha", String(imovel.area_ha), opcoes);
+      if (!form.getValues("nome")) {
+        form.setValue("nome", `Imóvel ${imovel.municipio ?? ""} ${imovel.cod_imovel.slice(-6)}`.replace(/\s+/g, " ").trim(), opcoes);
+      }
+    } catch (e) {
+      setErroImovel((e as Error).message);
+    }
+  }
 
   const criar = useMutation({
     mutationFn: (corpo: unknown) => api.post<Fazenda>("/fazendas", corpo),
@@ -82,9 +106,14 @@ export default function PaginaNovaFazenda() {
               <ControlesDesenho desenho={desenho} areaDeclaradaHa={areaDeclarada || null} />
               {faltaGeometria ? (
                 <p className="text-xs text-red-700">
-                  {desenho.modo === "ponto" ? "Marque o ponto no mapa." : "Desenhe o contorno com pelo menos 3 vértices."}
+                  {modoImovel
+                    ? "Clique num imóvel do CAR no mapa."
+                    : desenho.modo === "ponto"
+                      ? "Marque o ponto no mapa."
+                      : "Desenhe o contorno com pelo menos 3 vértices."}
                 </p>
               ) : null}
+              {erroImovel ? <Mensagem>{erroImovel}</Mensagem> : null}
             </div>
 
             <div className="space-y-2">
@@ -109,6 +138,12 @@ export default function PaginaNovaFazenda() {
             <AjustarTamanho />
             <Enquadrar geometrias={(fazendas ?? []).map((f) => f.geometry)} chave={String(fazendas?.length ?? 0)} zoomMaximo={14} />
             <CamadaSupressao visivel onEstado={aoMudarCamada} />
+            <CamadaImoveis
+              visivel={modoImovel}
+              onEstado={aoMudarImoveis}
+              onSelecionar={escolherImovel}
+              selecionado={desenho.imovel?.cod_imovel ?? null}
+            />
             {fazendas?.map((f) => (
               <GeometriaFazendaMapa key={f.id} geometria={f.geometry} status={f.status} rotulo={f.nome} esmaecida />
             ))}
@@ -116,9 +151,10 @@ export default function PaginaNovaFazenda() {
           </Mapa>
           <div className="pointer-events-none absolute top-3 right-16 left-14 z-[500] flex flex-wrap gap-2">
             <AvisoCamada estado={estadoCamada} visivel />
+            <AvisoCamada estado={estadoImoveis} visivel={modoImovel} nome="imóveis do CAR" />
           </div>
           <div className="pointer-events-none absolute bottom-6 left-3 z-[500] hidden sm:block">
-            <LegendaMapa />
+            <LegendaMapa comImoveis={modoImovel} />
           </div>
         </div>
       </div>

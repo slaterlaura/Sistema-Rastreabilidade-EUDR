@@ -6,12 +6,13 @@
  * e a supressão do PRODES hachurada por baixo.
  */
 
-import { ArrowRight, Layers, MapPin, Sprout } from "lucide-react";
+import { ArrowRight, Grid2x2, Layers, MapPin, Sprout } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AjustarTamanho,
   AvisoCamada,
+  CamadaImoveis,
   CamadaSupressao,
   DefinicoesHachura,
   Enquadrar,
@@ -51,6 +52,9 @@ function FazendasBoard({ fazendas, fornecedores = [], selecionadaInicial = null,
   const [supressaoVisivel, setSupressaoVisivel] = useState(true);
   const [estadoCamada, setEstadoCamada] = useState<EstadoCamada | null>(null);
   const aoMudarCamada = useCallback((e: EstadoCamada) => setEstadoCamada(e), []);
+  const [imoveisVisiveis, setImoveisVisiveis] = useState(false);
+  const [estadoImoveis, setEstadoImoveis] = useState<EstadoCamada | null>(null);
+  const aoMudarImoveis = useCallback((e: EstadoCamada) => setEstadoImoveis(e), []);
 
   const nomeFornecedor = useMemo(() => new Map(fornecedores.map((f) => [f.id, f.nome])), [fornecedores]);
   const contagem = useMemo(() => {
@@ -164,6 +168,7 @@ function FazendasBoard({ fazendas, fornecedores = [], selecionadaInicial = null,
           <AjustarTamanho />
           <Enquadrar geometrias={fazendas.map((f) => f.geometry)} chave={String(fazendas.length)} />
           <CamadaSupressao visivel={supressaoVisivel} onEstado={aoMudarCamada} />
+          <CamadaImoveis visivel={imoveisVisiveis} onEstado={aoMudarImoveis} />
           {ordemMapa.map((f) => (
             <GeometriaFazendaMapa
               key={f.id}
@@ -189,10 +194,22 @@ function FazendasBoard({ fazendas, fornecedores = [], selecionadaInicial = null,
           >
             <Layers size={12} aria-hidden="true" /> Supressão PRODES
           </button>
+          <button
+            type="button"
+            onClick={() => setImoveisVisiveis((v) => !v)}
+            aria-pressed={imoveisVisiveis}
+            className={cn(
+              "pointer-events-auto flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium shadow-sm",
+              imoveisVisiveis ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600",
+            )}
+          >
+            <Grid2x2 size={12} aria-hidden="true" /> Imóveis CAR
+          </button>
           <AvisoCamada estado={estadoCamada} visivel={supressaoVisivel} />
+          <AvisoCamada estado={estadoImoveis} visivel={imoveisVisiveis} nome="imóveis do CAR" />
         </div>
         <div className="pointer-events-none absolute bottom-6 left-3 z-[500] hidden sm:block">
-          <LegendaMapa comSupressao={supressaoVisivel} />
+          <LegendaMapa comSupressao={supressaoVisivel} comImoveis={imoveisVisiveis} />
         </div>
 
         {fazendaSelecionada ? <CartaoFazenda fazenda={fazendaSelecionada} fornecedor={nomeFornecedor.get(fazendaSelecionada.fornecedor_id)} /> : null}

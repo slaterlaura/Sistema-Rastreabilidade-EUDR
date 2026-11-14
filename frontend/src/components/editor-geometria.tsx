@@ -2,19 +2,20 @@
  * Desenho de fazenda no mapa, pensado para quem não conhece SIG: clicar adiciona um vértice,
  * "Desfazer" remove o último, a área aparece em hectares enquanto se desenha.
  * Ponto só para áreas de até 4 ha (R4); o servidor também valida.
+ * Ou, em vez de desenhar, escolher um imóvel da base do CAR (camada comum): o desenho vem do cadastro.
  */
 
 import type { Position } from "geojson";
-import { Hexagon, MapPin, Trash2, Undo2 } from "lucide-react";
+import { Grid2x2, Hexagon, MapPin, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CircleMarker, Polygon, Polyline, useMap, useMapEvents } from "react-leaflet";
+import { CircleMarker, GeoJSON, Polygon, Polyline, useMap, useMapEvents } from "react-leaflet";
 import { areaAnelHa } from "@/lib/geo";
 import { ha } from "@/lib/formato";
 import { COR_DESTAQUE } from "@/lib/status";
-import type { GeometriaFazenda } from "@/lib/tipos";
+import type { GeometriaFazenda, ImovelDetalhe } from "@/lib/tipos";
 import { cn } from "@/lib/utils";
 
-export type ModoDesenho = "poligono" | "ponto";
+export type ModoDesenho = "poligono" | "ponto" | "imovel";
 type LatLng = [number, number];
 
 export interface EstadoDesenho {
@@ -22,7 +23,9 @@ export interface EstadoDesenho {
   vertices: LatLng[];
   ponto: LatLng | null;
   multiParte: boolean;
+  imovel: ImovelDetalhe | null;
   setModo: (m: ModoDesenho) => void;
+  adotar: (imovel: ImovelDetalhe) => void;
   adicionar: (p: LatLng) => void;
   desfazer: () => void;
   limpar: () => void;
@@ -36,23 +39,24 @@ interface EstadoBase {
   vertices: LatLng[];
   ponto: LatLng | null;
   multiParte: boolean;
+  imovel: ImovelDetalhe | null;
 }
 
 function inicializar(g?: GeometriaFazenda | null): EstadoBase {
-  if (!g) return { modo: "poligono", vertices: [], ponto: null, multiParte: false };
-  if (g.type === "Point") {
-    return { modo: "ponto", vertices: [], ponto: [g.coordinates[1], g.coordinates[0]], multiParte: false };
-  }
+  const vazio = { vertices: [], ponto: null, multiParte: false, imovel: null };
+  if (!g) return { ...vazio, modo: "poligono" };
+  if (g.type === "Point") return { ...vazio, modo: "ponto", ponto: [g.coordinates[1], g.coordinates[0]] };
   const aneis: Position[][] = g.type === "Polygon" ? [g.coordinates[0]] : g.coordinates.map((p) => p[0]);
-  if (aneis.length !== 1) return { modo: "poligono", vertices: [], ponto: null, multiParte: true };
+  if (aneis.length !== 1) return { ...vazio, modo: "poligono", multiParte: true };
   const anel = aneis[0].slice(0, -1); // GeoJSON repete o primeiro vértice no fim
-  return { modo: "poligono", vertices: anel.map(([lng, lat]) => [lat, lng] as LatLng), ponto: null, multiParte: false };
+  return { ...vazio, modo: "poligono", vertices: anel.map(([lng, lat]) => [lat, lng] as LatLng) };
 }
 
 export function useDesenho(inicial?: GeometriaFazenda | null): EstadoDesenho {
   const [estado, setEstado] = useState<EstadoBase>(() => inicializar(inicial));
 
   const geometria = useMemo<GeometriaFazenda | null>(() => {
+    if (estado.modo === "imovel") return estado.imovel?.geometry ?? null;
     if (estado.modo === "ponto") {
       return estado.ponto ? { type: "Point", coordinates: [estado.ponto[1], estado.ponto[0]] } : null;
     }
@@ -71,18 +75,26 @@ export function useDesenho(inicial?: GeometriaFazenda | null): EstadoDesenho {
     geometria,
     areaHa,
     setModo: (modo) => setEstado((e) => ({ ...e, modo })),
+    adotar: (imovel) => setEstado((e) => ({ ...e, modo: "imovel", imovel })),
     adicionar: (p) =>
       setEstado((e) => (e.modo === "ponto" ? { ...e, ponto: p } : { ...e, vertices: [...e.vertices, p], multiParte: false })),
     desfazer: () =>
-      setEstado((e) => (e.modo === "ponto" ? { ...e, ponto: null } : { ...e, vertices: e.vertices.slice(0, -1) })),
-    limpar: () => setEstado((e) => ({ ...e, vertices: [], ponto: null, multiParte: false })),
+      setEstado((e) =>
+        e.modo === "imovel"
+          ? { ...e, imovel: null }
+          : e.modo === "ponto"
+            ? { ...e, ponto: null }
+            : { ...e, vertices: e.vertices.slice(0, -1) },
+      ),
+    limpar: () => setEstado((e) => ({ ...e, vertices: [], ponto: null, multiParte: false, imovel: null })),
     reiniciar: (g) => setEstado(inicializar(g)),
   };
 }
 
 /** Vai dentro do <Mapa>: captura cliques e desenha o rascunho em laranja. */
-export function CamadaDesenho({ desenho, ativo = true }: { desenho: EstadoDesenho; ativo?: boolean }) {
+export function CamadaDesenho({ desenho, ativo: ativoProp = true }: { desenho: EstadoDesenho; ativo?: boolean }) {
   const mapa = useMap();
+  const ativo = ativoProp && desenho.modo !== "imovel";
   useEffect(() => {
     const el = mapa.getContainer();
     el.style.cursor = ativo ? "crosshair" : "";
@@ -101,6 +113,17 @@ export function CamadaDesenho({ desenho, ativo = true }: { desenho: EstadoDesenh
   });
 
   const estilo = { color: COR_DESTAQUE, weight: 2.5, dashArray: "6 4" };
+  if (desenho.modo === "imovel") {
+    if (!desenho.imovel) return null;
+    return (
+      <GeoJSON
+        key={desenho.imovel.cod_imovel}
+        data={desenho.imovel.geometry}
+        interactive={false}
+        style={() => ({ ...estilo, dashArray: undefined, fillColor: COR_DESTAQUE, fillOpacity: 0.15 })}
+      />
+    );
+  }
   if (desenho.modo === "ponto") {
     if (!desenho.ponto) return null;
     return (
@@ -135,11 +158,12 @@ export function ControlesDesenho({ desenho, areaDeclaradaHa }: { desenho: Estado
   const pontoGrande = desenho.modo === "ponto" && (areaDeclaradaHa ?? 0) > 4;
   return (
     <div className="space-y-3">
-      <div role="group" aria-label="Forma da fazenda" className="flex gap-1.5">
+      <div role="group" aria-label="Forma da fazenda" className="flex flex-wrap gap-1.5">
         {(
           [
             { modo: "poligono", rotulo: "Polígono", icone: Hexagon },
             { modo: "ponto", rotulo: "Ponto (até 4 ha)", icone: MapPin },
+            { modo: "imovel", rotulo: "Imóvel do CAR", icone: Grid2x2 },
           ] as const
         ).map(({ modo, rotulo, icone: Icone }) => (
           <button
@@ -158,9 +182,11 @@ export function ControlesDesenho({ desenho, areaDeclaradaHa }: { desenho: Estado
       </div>
 
       <p className="text-xs leading-relaxed text-slate-600">
-        {desenho.modo === "poligono"
-          ? "Clique no mapa contornando a área, um vértice por clique. Com três ou mais vértices o contorno fecha sozinho. Use a camada Satélite (canto do mapa) para enxergar a lavoura."
-          : "Clique no centro da área. Ponto só é aceito para fazendas de até 4 ha; acima disso, desenhe o polígono."}
+        {desenho.modo === "imovel"
+          ? "Aproxime o mapa até aparecerem os contornos cinza dos imóveis do CAR e clique no imóvel da fazenda. O desenho, o código do CAR, o município e a área vêm do cadastro."
+          : desenho.modo === "poligono"
+            ? "Clique no mapa contornando a área, um vértice por clique. Com três ou mais vértices o contorno fecha sozinho. Use a camada Satélite (canto do mapa) para enxergar a lavoura."
+            : "Clique no centro da área. Ponto só é aceito para fazendas de até 4 ha; acima disso, desenhe o polígono."}
       </p>
 
       {desenho.multiParte ? (
@@ -170,8 +196,12 @@ export function ControlesDesenho({ desenho, areaDeclaradaHa }: { desenho: Estado
       ) : null}
 
       <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-        <span className="font-mono text-[11px] text-slate-600">
-          {desenho.modo === "poligono"
+        <span className="min-w-0 truncate font-mono text-[11px] text-slate-600">
+          {desenho.modo === "imovel"
+            ? desenho.imovel
+              ? `CAR ${desenho.imovel.cod_imovel} · ${ha(desenho.imovel.area_ha)}`
+              : "NENHUM IMÓVEL ESCOLHIDO"
+            : desenho.modo === "poligono"
             ? `${desenho.vertices.length} VÉRTICES · ${desenho.vertices.length >= 3 ? `≈ ${ha(desenho.areaHa)}` : "contorno aberto"}`
             : desenho.ponto
               ? `PONTO ${desenho.ponto[0].toFixed(5)}, ${desenho.ponto[1].toFixed(5)}`
@@ -192,6 +222,9 @@ export function ControlesDesenho({ desenho, areaDeclaradaHa }: { desenho: Estado
         <p className="text-xs text-[#a63d2f]">
           Contorno com mais de 100.000 ha: o servidor vai recusar. Aproxime o mapa e desenhe só a área da fazenda.
         </p>
+      ) : null}
+      {desenho.modo === "imovel" && desenho.imovel?.situacao === "CA" ? (
+        <p className="text-xs text-[#a63d2f]">Este CAR está cancelado no SICAR. Confira com o fornecedor antes de usar.</p>
       ) : null}
       {pontoGrande ? (
         <p className="text-xs text-[#a63d2f]">A área declarada passa de 4 ha: o servidor vai recusar o ponto.</p>

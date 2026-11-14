@@ -128,6 +128,22 @@ DATABASE_URL="<url de carga que a Laura passou>" \
 
 Depois de uma carga do PRODES, alguém clica em **Fazendas → Reprocessar camada** no site.
 
+### Imóveis do CAR (base comum a todos)
+
+Baixe o shapefile **"Área do Imóvel"** do município ou estado no SICAR (consulta pública do CAR) e salve em `data/raw/`.
+Não precisa converter nem renomear colunas: o script reconhece os nomes do SICAR, em maiúsculas ou minúsculas.
+
+```bash
+cd backend && source .venv/bin/activate
+DATABASE_URL="<url de carga que a Laura passou>" \
+  python scripts/carga_imoveis.py --arquivo ../data/raw/AREA_IMOVEL.zip
+```
+
+- Carregar outro município **soma** à base; recarregar o mesmo **atualiza**. Nada é apagado.
+- `--uf MG` carrega só um estado de um arquivo maior; `--somente-converter saida.geojson` gera o GeoJSON sem tocar no banco.
+- No site, os imóveis aparecem no chip **Imóveis CAR** do mapa, para todas as contas, e em **Nova fazenda → Imóvel do CAR**,
+  onde basta clicar no imóvel para cadastrá-lo como fazenda.
+
 Teste sempre primeiro no banco **local** (sem a `DATABASE_URL` na frente do comando).
 
 ---

@@ -231,3 +231,42 @@ class Dossie(Base):
     retrato = mapped_column(JSONB, nullable=False)
     caminho_geojson: Mapped[str | None] = mapped_column(String(500))
     caminho_pdf: Mapped[str | None] = mapped_column(String(500))
+
+
+class ImovelVersao(Base):
+    """Cada carga da base de imóveis do CAR (SICAR)."""
+
+    __tablename__ = "imovel_versao"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    origem: Mapped[str] = mapped_column(String(120))
+    uf: Mapped[str | None] = mapped_column(String(2))
+    arquivo: Mapped[str | None] = mapped_column(String(255))
+    n_feicoes: Mapped[int] = mapped_column(Integer)
+    carregada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Imovel(Base):
+    """Imóvel rural do CAR: camada de referência comum a todos os usuários (sem usuario_id).
+
+    Cada exportador "adota" um imóvel como fazenda dele; a fazenda é que tem status, fornecedor e documentos.
+    """
+
+    __tablename__ = "imovel"
+    __table_args__ = (
+        Index("idx_imovel_geom", "geom", postgresql_using="gist"),
+        Index("idx_imovel_uf", "uf"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    cod_imovel: Mapped[str] = mapped_column(String(80), unique=True)
+    municipio: Mapped[str | None] = mapped_column(String(120))
+    uf: Mapped[str | None] = mapped_column(String(2))
+    area_ha: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
+    situacao: Mapped[str | None] = mapped_column(String(20))
+    condicao: Mapped[str | None] = mapped_column(String(255))
+    versao_id: Mapped[int] = mapped_column(ForeignKey("imovel_versao.id", ondelete="RESTRICT"), index=True)
+    geom = mapped_column(Geometry("GEOMETRY", srid=4326, spatial_index=False), nullable=False)
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
