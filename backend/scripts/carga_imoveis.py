@@ -35,6 +35,7 @@ import geopandas as gpd  # noqa: E402
 import pandas as pd  # noqa: E402
 import pyogrio  # noqa: E402
 import shapely  # noqa: E402
+import psycopg2  # noqa: E402
 from psycopg2.extras import execute_values  # noqa: E402
 
 from scripts.comum_carga import (  # noqa: E402
@@ -182,6 +183,33 @@ _SQL_UPSERT = """
 """
 
 
+TENTATIVAS = 3
+
+
+def _gravar_lote(conexao, linhas: list[tuple], versao_id: int) -> list[bool]:
+    """Grava um lote numa transação; devolve, por imóvel, se foi inserido (True) ou atualizado (False)."""
+    try:
+        with conexao.cursor() as cur:
+            cur.execute(
+                "CREATE TEMP TABLE _imovel_carga (cod_imovel text, municipio text, uf text, area_ha numeric, "
+                "situacao text, condicao text, wkb text) ON COMMIT DROP"
+            )
+            execute_values(cur, "INSERT INTO _imovel_carga VALUES %s", linhas, page_size=LOTE)
+            cur.execute(_SQL_UPSERT, (versao_id,))
+            resultado = [r[0] for r in cur.fetchall()]
+            cur.execute(
+                "UPDATE imovel_versao SET n_feicoes = n_feicoes + %s WHERE id = %s", (len(resultado), versao_id)
+            )
+        conexao.commit()
+        return resultado
+    except Exception:
+        try:
+            conexao.rollback()
+        except Exception:
+            pass
+        raise
+
+
 def carregar_em_lotes(
     lotes: Iterable[gpd.GeoDataFrame], *, origem: str, uf: str | None, arquivo: str, mostrar: bool = False
 ) -> tuple[int, int, int, Counter]:
@@ -213,18 +241,23 @@ def carregar_em_lotes(
                 )
                 for r in gdf.itertuples(index=False)
             ]
-            with conexao.cursor() as cur:
-                cur.execute(
-                    "CREATE TEMP TABLE _imovel_carga (cod_imovel text, municipio text, uf text, area_ha numeric, "
-                    "situacao text, condicao text, wkb text) ON COMMIT DROP"
-                )
-                execute_values(cur, "INSERT INTO _imovel_carga VALUES %s", linhas, page_size=LOTE)
-                cur.execute(_SQL_UPSERT, (versao_id,))
-                resultado = [r[0] for r in cur.fetchall()]
-                cur.execute(
-                    "UPDATE imovel_versao SET n_feicoes = n_feicoes + %s WHERE id = %s", (len(resultado), versao_id)
-                )
-            conexao.commit()
+            for tentativa in range(1, TENTATIVAS + 1):
+                try:
+                    resultado = _gravar_lote(conexao, linhas, versao_id)
+                    break
+                except (psycopg2.OperationalError, psycopg2.InterfaceError) as erro:
+                    # Queda de conexão (rede, Azure): reconecta e repete o lote; os anteriores já estão salvos.
+                    if tentativa == TENTATIVAS:
+                        raise
+                    espera = 10 * tentativa
+                    print(f"  lote {numero}: conexão caiu ({str(erro).strip().splitlines()[0]}); "
+                          f"nova tentativa em {espera} s", flush=True)
+                    try:
+                        conexao.close()
+                    except Exception:
+                        pass
+                    time.sleep(espera)
+                    conexao = engine.raw_connection()
             novos = sum(resultado)
             inseridos += novos
             atualizados += len(resultado) - novos
@@ -239,10 +272,16 @@ def carregar_em_lotes(
             cur.execute("ANALYZE imovel")
         conexao.commit()
     except Exception:
-        conexao.rollback()
+        try:
+            conexao.rollback()
+        except Exception:
+            pass  # conexão já caiu: não esconder o erro original
         raise
     finally:
-        conexao.close()
+        try:
+            conexao.close()
+        except Exception:
+            pass
     return versao_id, inseridos, atualizados, por_uf
 
 

@@ -160,3 +160,20 @@ def test_le_geojson_grande_em_lotes(tmp_path):
     lotes, resumo = carga.ler_em_lotes(arquivo, lote=2)
     tamanhos = [len(l) for l in lotes]
     assert tamanhos == [2, 2, 1] and resumo.lidas == 5 and resumo.crs_origem
+
+
+def test_queda_de_conexao_no_meio_repete_o_lote(tmp_path, monkeypatch):
+    shp = _shapefile(tmp_path, "queda", {"cod_imovel": [f"SP-1-Q{i}" for i in range(4)]})
+    original = carga._gravar_lote
+    chamadas = {"n": 0}
+
+    def instavel(conexao, linhas, versao_id):
+        chamadas["n"] += 1
+        if chamadas["n"] == 2:  # o 2º lote cai uma vez
+            raise carga.psycopg2.OperationalError("server closed the connection unexpectedly")
+        return original(conexao, linhas, versao_id)
+
+    monkeypatch.setattr(carga, "_gravar_lote", instavel)
+    monkeypatch.setattr(carga.time, "sleep", lambda s: None)
+    carga.executar(["--arquivo", str(shp), "--lote", "2"])
+    assert len(_imoveis()) == 4 and chamadas["n"] == 3
