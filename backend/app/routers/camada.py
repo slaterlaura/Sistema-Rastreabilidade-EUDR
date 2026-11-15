@@ -53,14 +53,14 @@ def versao_atual(response: Response, db: Session = Depends(get_db), usuario: Usu
     }
 
 
-def _ler_bbox(bbox: str) -> tuple[float, float, float, float]:
+def _ler_bbox(bbox: str, area_maxima: float = AREA_MAXIMA_GRAUS2) -> tuple[float, float, float, float]:
     try:
         oeste, sul, leste, norte = (float(v) for v in bbox.split(","))
     except ValueError:
         raise HTTPException(400, detail="bbox deve ser 'oeste,sul,leste,norte' em graus.")
     if not (-180 <= oeste < leste <= 180 and -90 <= sul < norte <= 90):
         raise HTTPException(400, detail="bbox fora dos limites de longitude/latitude.")
-    if (leste - oeste) * (norte - sul) > AREA_MAXIMA_GRAUS2:
+    if (leste - oeste) * (norte - sul) > area_maxima:
         raise HTTPException(400, detail="Área do mapa grande demais para a camada de supressão. Aproxime o mapa.")
     return oeste, sul, leste, norte
 
@@ -95,4 +95,49 @@ def supressao(
             }
             for l in linhas[:LIMITE_FEICOES]
         ],
+    }
+
+
+# Mapa de calor: nível 0 cobre o Brasil inteiro numa resposta; nível 1 só um estado/região por vez.
+AREA_MAXIMA_CALOR = {0: 3000.0, 1: 150.0}
+LIMITE_PONTOS_CALOR = 40000
+
+_SQL_CALOR = text(
+    """
+    SELECT lat, lon, area_ha FROM prodes_calor
+    WHERE nivel = :nivel AND lat BETWEEN :sul AND :norte AND lon BETWEEN :oeste AND :leste
+    ORDER BY area_ha DESC
+    LIMIT :limite
+    """
+)
+
+
+@router.get("/prodes/calor")
+def calor(
+    response: Response,
+    nivel: int = Query(..., ge=0, le=1, description="0 = células de 0,25° (Brasil/estado); 1 = 0,05° (região)"),
+    bbox: str = Query(..., description="oeste,sul,leste,norte (graus, EPSG:4326)"),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(usuario_atual),
+):
+    """Desmatamento pós-corte pré-agregado, para o mapa de calor com o mapa afastado.
+
+    Pontos compactos [lat, lon, hectares]; `max` é o percentil 95 dos hectares no recorte, para a
+    escala de cor não ser dominada por poucos pontos enormes.
+    """
+    oeste, sul, leste, norte = _ler_bbox(bbox, AREA_MAXIMA_CALOR[nivel])
+    linhas = db.execute(
+        _SQL_CALOR,
+        {"nivel": nivel, "oeste": oeste, "sul": sul, "leste": leste, "norte": norte, "limite": LIMITE_PONTOS_CALOR + 1},
+    ).all()
+    truncado = len(linhas) > LIMITE_PONTOS_CALOR
+    linhas = linhas[:LIMITE_PONTOS_CALOR]
+    areas = sorted(l.area_ha for l in linhas)
+    p95 = areas[min(len(areas) - 1, int(len(areas) * 0.95))] if areas else 0.0
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    return {
+        "nivel": nivel,
+        "truncado": truncado,
+        "max": round(p95, 1),
+        "pontos": [[round(l.lat, 4), round(l.lon, 4), round(l.area_ha, 1)] for l in linhas],
     }

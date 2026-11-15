@@ -74,6 +74,7 @@ erDiagram
     embarque ||--o| dossie : "gera ao fechar"
 
     camada_versao ||--o{ camada_prodes : "contém"
+    camada_prodes ||--o{ prodes_calor : "resumido em"
     camada_versao ||--o{ fazenda : "verificou"
     imovel_versao ||--o{ imovel : "carregou"
 ```
@@ -81,7 +82,7 @@ erDiagram
 | Família | Tabelas | Tem dono? | Como entra |
 |---|---|---|---|
 | **Cadastro de cada exportador** | `usuario`, `fornecedor`, `fazenda`, `documento`, `embarque`, `parcela`, `dossie` | Sim: todas ligadas a um `usuario` | Pelo site |
-| **Camadas de referência** | `camada_versao`, `camada_prodes`, `imovel_versao`, `imovel` | Não: comuns a todos | Por script (`carga_*.py`) |
+| **Camadas de referência** | `camada_versao`, `camada_prodes`, `prodes_calor`, `imovel_versao`, `imovel` | Não: comuns a todos | Por script (`carga_*.py`, `agregar_prodes.py`) |
 | **Controle** | `alembic_version` (versão das migrações), `spatial_ref_sys` (sistemas de coordenadas, do PostGIS) | — | Automático |
 
 ### 3.2 Volume atual
@@ -199,6 +200,20 @@ quando) e grava os polígonos em `camada_prodes`:
 Hoje estão carregados os **seis biomas**, todos os estados, só a classe DESMATAMENTO e só anos depois de 2020
 (863 mil polígonos). Carregar de novo um bioma **substitui** a carga anterior dele.
 
+#### `prodes_calor`: o desmatamento resumido, para o mapa afastado
+Com o mapa mostrando o Brasil ou um estado, os 863 mil polígonos seriam pequenos demais para ver (e pesados demais
+para enviar). Esta tabela guarda o desmatamento **já somado em células**, que o mapa desenha como manchas de calor:
+
+| Coluna | O que é |
+|---|---|
+| `nivel` | `0` = células de 0,25° (~28 km), usadas com o mapa no Brasil/estado; `1` = 0,05° (~5,5 km), região |
+| `lat`, `lon` | Centro da célula **ponderado pela área** (cai onde o desmatamento está, não no meio do quadrado) |
+| `area_ha` | Hectares desmatados depois de 2020 na célula |
+| `n` | Quantos polígonos foram somados |
+
+Hoje: ~7,8 mil pontos no nível 0 e ~101 mil no nível 1. É **derivada** da `camada_prodes`: o `carga_prodes.py`
+recalcula ao fim de cada carga (~26 s), e o `agregar_prodes.py` recalcula sem recarregar nada. Nunca edite à mão.
+
 #### `imovel_versao` e `imovel`: os imóveis do CAR
 Cada execução do `carga_imoveis.py` cria uma linha em `imovel_versao` e grava os imóveis em `imovel`:
 
@@ -259,6 +274,7 @@ em `backend/alembic/versions/`:
 |---|---|
 | `0001_baseline` | Extensão PostGIS e todas as tabelas de cadastro e do PRODES |
 | `0002_imoveis` | `imovel_versao` e `imovel` (no PR `camada-imoveis`) |
+| `0003_prodes_calor` | `prodes_calor`, o resumo do desmatamento para o mapa de calor |
 
 ```bash
 cd backend && source .venv/bin/activate
