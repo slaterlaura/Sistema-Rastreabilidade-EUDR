@@ -2,13 +2,13 @@
  * Peças de mapa (Leaflet) do quadro de fazendas.
  *
  * - Camada de supressão do PRODES por baixo, hachurada e desligável (context.md §13).
+ * - Divisas dos estados sempre visíveis (malha do IBGE, arquivo estático: não gasta execução da API).
  * - Fazenda em polígono: cor do traço = status. Fazenda em ponto: círculo cheio com anel tracejado,
  *   para deixar claro que não há área delimitada.
  */
 
 import { useQuery } from "@tanstack/react-query";
-import L from "@/lib/leaflet-global"; // expõe window.L antes do plugin de calor
-import "leaflet.heat";
+import L from "leaflet";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CircleMarker,
@@ -81,10 +81,36 @@ export function Mapa({ className, children, zoomInicial = 4 }: MapaProps) {
           />
         </LayersControl.BaseLayer>
       </LayersControl>
+      <Pane name="calor" style={{ zIndex: 340 }} />
       <Pane name="supressao" style={{ zIndex: 350 }} />
       <Pane name="imoveis" style={{ zIndex: 360 }} />
+      <Pane name="divisas" style={{ zIndex: 370 }} />
+      <CamadaDivisas />
       {children}
     </MapContainer>
+  );
+}
+
+/** Divisas dos estados (IBGE, qualidade mínima, ~100 KB), por cima das camadas e por baixo das fazendas. */
+function CamadaDivisas() {
+  const { data } = useQuery({
+    queryKey: ["divisas-ufs"],
+    queryFn: async () => {
+      const r = await fetch(`${import.meta.env.BASE_URL}ufs-brasil.json`);
+      if (!r.ok) throw new Error("Não foi possível carregar as divisas dos estados.");
+      return (await r.json()) as GeoJSON.FeatureCollection;
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+  if (!data) return null;
+  return (
+    <GeoJSON
+      data={data}
+      pane="divisas"
+      interactive={false}
+      style={() => ({ color: "#334155", weight: 1.1, opacity: 0.75, fill: false })}
+    />
   );
 }
 
@@ -242,9 +268,59 @@ interface RespostaCalor {
 }
 
 const BRASIL: Limites = [-75, -35, -28, 7];
-export const GRADIENTE_CALOR: Record<number, string> = { 0.15: "#fde68a", 0.4: "#f59e0b", 0.7: "#dc2626", 1: "#7f1d1d" };
 
-/** Mapa de calor de um nível de agregação, só dentro da sua faixa de zoom. */
+/** Faixas de cor sólidas (sem degradê), relativas ao percentil 95 dos hectares no recorte. */
+export const CLASSES_CALOR = [
+  { ate: 0.08, cor: "#fde68a" },
+  { ate: 0.25, cor: "#fbbf24" },
+  { ate: 0.5, cor: "#f97316" },
+  { ate: 1, cor: "#dc2626" },
+  { ate: Infinity, cor: "#7f1d1d" },
+];
+
+interface Celula {
+  sul: number;
+  oeste: number;
+  norte: number;
+  leste: number;
+  cor: string;
+}
+
+/** Desenha as células da agregação como quadrados cheios, em blocos (tiles) de canvas. */
+class GradeCalor extends L.GridLayer {
+  constructor(
+    private mapa: L.Map,
+    private celulas: Celula[],
+    opcoes: L.GridLayerOptions,
+  ) {
+    super(opcoes);
+  }
+
+  createTile(coords: L.Coords): HTMLElement {
+    const bloco = document.createElement("canvas");
+    const tamanho = this.getTileSize();
+    bloco.width = tamanho.x;
+    bloco.height = tamanho.y;
+    const ctx = bloco.getContext("2d");
+    if (!ctx) return bloco;
+    const origem = coords.scaleBy(tamanho);
+    const noroeste = this.mapa.unproject(origem, coords.z);
+    const sudeste = this.mapa.unproject(origem.add(tamanho), coords.z);
+    for (const c of this.celulas) {
+      if (c.norte < sudeste.lat || c.sul > noroeste.lat || c.leste < noroeste.lng || c.oeste > sudeste.lng) continue;
+      const a = this.mapa.project([c.norte, c.oeste], coords.z).subtract(origem);
+      const b = this.mapa.project([c.sul, c.leste], coords.z).subtract(origem);
+      // arredonda para fora: células vizinhas encostam, sem frestas entre elas
+      const x = Math.floor(a.x);
+      const y = Math.floor(a.y);
+      ctx.fillStyle = c.cor;
+      ctx.fillRect(x, y, Math.max(1, Math.ceil(b.x) - x), Math.max(1, Math.ceil(b.y) - y));
+    }
+    return bloco;
+  }
+}
+
+/** Mapa de calor de um nível de agregação (células sólidas), só dentro da sua faixa de zoom. */
 function CamadaCalor({
   visivel,
   nivel,
@@ -259,8 +335,6 @@ function CamadaCalor({
   passo: number;
 }) {
   const mapa = useMap();
-  const [zoom, setZoom] = useState(() => mapa.getZoom());
-  useMapEvents({ zoomend: () => setZoom(mapa.getZoom()) });
   const { data } = useCamadaRecortada<RespostaCalor>({
     chave: `camada-calor-${nivel}`,
     rota: `/camada/prodes/calor?nivel=${nivel}`,
@@ -274,31 +348,21 @@ function CamadaCalor({
 
   useEffect(() => {
     if (!data || data.pontos.length === 0) return;
-    // Tamanho de uma célula na tela (pixels) neste zoom, numa latitude típica do Brasil (~15°S).
-    const grausCelula = nivel === 0 ? 0.25 : 0.05;
-    const pxCelula = ((256 * 2 ** zoom) / 360) * grausCelula * Math.cos((15 * Math.PI) / 180);
-    const limitar = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
-    // Raiz quadrada: realça o meio da distribuição sem deixar o percentil 95 saturar tudo.
+    // Cada ponto é o centro ponderado da sua célula: a célula é a casa da grade que o contém.
+    const grau = nivel === 0 ? 0.25 : 0.05;
     const max = Math.max(data.max, 1);
-    const pontos: L.PontoCalor[] = data.pontos.map(([lat, lon, ha]) => [lat, lon, Math.min(1, Math.sqrt(ha / max))]);
-    const camada = L.heatLayer(pontos, {
-      radius: limitar(pxCelula * 0.9, 2, 22),
-      blur: limitar(pxCelula * 1.1, 2, 26),
-      maxZoom: zoom, // o plugin atenua a intensidade abaixo de maxZoom; o raio já faz esse papel
-      max: 1.6, // células vizinhas se somam um pouco antes de chegar ao vermelho escuro
-      minOpacity: 0.05,
-      gradient: GRADIENTE_CALOR,
-    }).addTo(mapa);
-    // O plugin desenha no overlayPane, junto das fazendas: manda o canvas para baixo delas e sem capturar cliques.
-    const canvas = (camada as unknown as { _canvas?: HTMLCanvasElement })._canvas;
-    if (canvas) {
-      canvas.style.zIndex = "-1";
-      canvas.style.pointerEvents = "none";
-    }
+    const celulas: Celula[] = data.pontos.map(([lat, lon, ha]) => {
+      const sul = Math.floor(lat / grau) * grau;
+      const oeste = Math.floor(lon / grau) * grau;
+      const razao = ha / max;
+      const cor = (CLASSES_CALOR.find((c) => razao <= c.ate) ?? CLASSES_CALOR[CLASSES_CALOR.length - 1]).cor;
+      return { sul, oeste, norte: sul + grau, leste: oeste + grau, cor };
+    });
+    const camada = new GradeCalor(mapa, celulas, { pane: "calor", opacity: 0.78, minZoom: zoomMinimo, maxZoom: zoomMaximo }).addTo(mapa);
     return () => {
       camada.remove();
     };
-  }, [mapa, data, nivel, zoom]);
+  }, [mapa, data, nivel, zoomMinimo, zoomMaximo]);
 
   return null;
 }
@@ -468,13 +532,18 @@ export function LegendaMapa({ comSupressao = true, comImoveis = false }: { comSu
         ) : null}
         {comSupressao ? (
           <li className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="inline-block h-2.5 w-4 rounded-sm bg-[linear-gradient(90deg,#fde68a,#f59e0b,#dc2626,#7f1d1d)]"
-            />
-            CONCENTRAÇÃO (AFASTADO)
+            <span aria-hidden="true" className="inline-flex">
+              {CLASSES_CALOR.map((c) => (
+                <span key={c.cor} className="inline-block size-2.5" style={{ backgroundColor: c.cor }} />
+              ))}
+            </span>
+            DESMATAMENTO: MENOS → MAIS (AFASTADO)
           </li>
         ) : null}
+        <li className="flex items-center gap-2">
+          <span aria-hidden="true" className="inline-block h-0 w-4 border-t border-slate-700" />
+          DIVISA DE ESTADO
+        </li>
         {comImoveis ? (
           <li className="flex items-center gap-2">
             <span aria-hidden="true" className="inline-block h-3 w-4 rounded-sm border border-slate-500" />

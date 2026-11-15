@@ -409,12 +409,15 @@ sequenceDiagram
     M->>M: desenha com hachura, por baixo das fazendas
 ```
 
-- **Afastado** (zoom menor que 10), o mapa mostra um **mapa de calor**: manchas amarelas a vermelho-escuro onde há
-  mais desmatamento pós-2020. Ele vem da tabela `prodes_calor`, já somada em células (`GET /camada/prodes/calor`):
+- **Afastado** (zoom menor que 10), o mapa mostra um **mapa de calor em grade**: cada célula é um quadrado cheio,
+  em 5 faixas de cor (amarelo-claro a vermelho-escuro) conforme os hectares desmatados pós-2020 em relação ao
+  percentil 95 do recorte. Sem degradê nem desfoque, para a leitura ficar clara. Ele vem da tabela `prodes_calor`, já somada em células (`GET /camada/prodes/calor`):
   até o zoom 6 uma única resposta com o Brasil inteiro (células de ~28 km); do 7 ao 9, o recorte visível em células
   de ~5,5 km. A partir do zoom 10 as manchas somem e entram os polígonos reais.
 - **O `v=8` na URL** muda quando há carga nova; assim o navegador não reaproveita a camada antiga do cache.
 - **Recorte arredondado:** mexer pouco o mapa reaproveita a resposta anterior.
+- **Divisas dos estados** aparecem sempre, em todos os mapas: malha do IBGE em `frontend/public/ufs-brasil.json`
+  (~100 KB, arquivo estático do site, sem chamada à API).
 
 ### 7.5 Documentos
 
