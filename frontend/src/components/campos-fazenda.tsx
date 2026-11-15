@@ -1,4 +1,5 @@
 import type { UseFormReturn } from "react-hook-form";
+import { CamposMunicipioUf } from "@/components/campos-localidade";
 import { Campo } from "@/components/comum";
 import { Input } from "@/components/ui/input";
 
@@ -41,8 +42,9 @@ export function paraApi(c: CamposFazenda) {
 }
 
 export function CamposCadastraisFazenda({ form }: { form: UseFormReturn<CamposFazenda> }) {
-  const { register, formState } = form;
+  const { register, formState, watch, setValue } = form;
   const e = formState.errors;
+  const marcar = { shouldDirty: true };
   return (
     <div className="grid grid-cols-2 gap-3">
       <Campo rotulo="Nome da fazenda" erro={e.nome?.message} className="col-span-2">
@@ -68,16 +70,12 @@ export function CamposCadastraisFazenda({ form }: { form: UseFormReturn<CamposFa
           })}
         />
       </Campo>
-      <Campo rotulo="Município">
-        <Input {...register("municipio")} />
-      </Campo>
-      <Campo rotulo="UF" erro={e.uf?.message}>
-        <Input
-          maxLength={2}
-          className="uppercase"
-          {...register("uf", { validate: (v) => v === "" || /^[A-Za-z]{2}$/.test(v) || "Duas letras." })}
-        />
-      </Campo>
+      <CamposMunicipioUf
+        municipio={watch("municipio")}
+        uf={watch("uf")}
+        onMunicipio={(v) => setValue("municipio", v, marcar)}
+        onUf={(v) => setValue("uf", v, marcar)}
+      />
     </div>
   );
 }

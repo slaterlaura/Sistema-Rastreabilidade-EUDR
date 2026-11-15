@@ -1,4 +1,5 @@
 import type { UseFormReturn } from "react-hook-form";
+import { CamposMunicipioUf } from "@/components/campos-localidade";
 import { Campo } from "@/components/comum";
 import { Input } from "@/components/ui/input";
 import type { Fornecedor } from "@/lib/tipos";
@@ -38,8 +39,9 @@ export function fornecedorParaApi(c: CamposFornecedor) {
 }
 
 export function CamposCadastraisFornecedor({ form }: { form: UseFormReturn<CamposFornecedor> }) {
-  const { register, formState } = form;
+  const { register, formState, watch, setValue } = form;
   const e = formState.errors;
+  const marcar = { shouldDirty: true };
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
       <Campo rotulo="Nome ou razão social" erro={e.nome?.message} className="sm:col-span-4">
@@ -61,12 +63,14 @@ export function CamposCadastraisFornecedor({ form }: { form: UseFormReturn<Campo
       <Campo rotulo="Telefone" className="sm:col-span-3">
         <Input type="tel" {...register("telefone")} />
       </Campo>
-      <Campo rotulo="Município" className="sm:col-span-4">
-        <Input {...register("municipio")} />
-      </Campo>
-      <Campo rotulo="UF" erro={e.uf?.message} className="sm:col-span-2">
-        <Input maxLength={2} className="uppercase" {...register("uf", { validate: (v) => v === "" || /^[A-Za-z]{2}$/.test(v) || "Duas letras." })} />
-      </Campo>
+      <CamposMunicipioUf
+        municipio={watch("municipio")}
+        uf={watch("uf")}
+        onMunicipio={(v) => setValue("municipio", v, marcar)}
+        onUf={(v) => setValue("uf", v, marcar)}
+        classeMunicipio="sm:col-span-4"
+        classeUf="sm:col-span-2"
+      />
     </div>
   );
 }

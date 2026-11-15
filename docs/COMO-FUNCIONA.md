@@ -416,6 +416,11 @@ sequenceDiagram
   de ~5,5 km. A partir do zoom 10 as manchas somem e entram os polígonos reais.
 - **O `v=8` na URL** muda quando há carga nova; assim o navegador não reaproveita a camada antiga do cache.
 - **Recorte arredondado:** mexer pouco o mapa reaproveita a resposta anterior.
+- **Busca no mapa** (canto superior esquerdo de todos os mapas): município, estado, código do CAR ou coordenadas
+  (`-21.68, -51.07`). Municípios e estados vêm de `frontend/public/municipios.json` (IBGE, arquivo estático); só o
+  código do CAR consulta a API (`GET /imoveis/{cod}`).
+- **Cadastros:** município com sugestões (filtradas pela UF) e UF em lista, no fornecedor e na fazenda. Na fazenda,
+  no modo "Imóvel do CAR", dá para digitar o código em vez de procurar o imóvel no mapa.
 - **Divisas dos estados** aparecem sempre, em todos os mapas: malha do IBGE em `frontend/public/ufs-brasil.json`
   (~100 KB, arquivo estático do site, sem chamada à API).
 

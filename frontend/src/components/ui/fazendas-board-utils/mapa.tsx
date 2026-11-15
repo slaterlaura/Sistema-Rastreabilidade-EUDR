@@ -2,6 +2,7 @@
  * Peças de mapa (Leaflet) do quadro de fazendas.
  *
  * - Camada de supressão do PRODES por baixo, hachurada e desligável (context.md §13).
+ * - Busca no mapa (município, estado, código do CAR ou coordenadas) no canto superior esquerdo.
  * - Divisas dos estados sempre visíveis (malha do IBGE, arquivo estático: não gasta execução da API).
  * - Fazenda em polígono: cor do traço = status. Fazenda em ponto: círculo cheio com anel tracejado,
  *   para deixar claro que não há área delimitada.
@@ -9,7 +10,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import L from "leaflet";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CircleMarker,
   GeoJSON,
@@ -22,9 +24,18 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import { api } from "@/lib/api";
+import { Autocompletar, type Sugestao } from "@/components/ui/autocompletar";
 import { CENTRO_PADRAO, limitesDe } from "@/lib/geo";
+import { buscarMunicipios, buscarUfs, useLocalidades } from "@/lib/localidades";
 import { COR_DESTAQUE, COR_SUPRESSAO, STATUS } from "@/lib/status";
-import type { CamadaImovel, CamadaSupressao as Camada, GeometriaFazenda, ImovelResumo, StatusFazenda } from "@/lib/tipos";
+import type {
+  CamadaImovel,
+  CamadaSupressao as Camada,
+  GeometriaFazenda,
+  ImovelDetalhe,
+  ImovelResumo,
+  StatusFazenda,
+} from "@/lib/tipos";
 import { cn } from "@/lib/utils";
 
 /** Padrão SVG referenciado pela camada de supressão (fill: url(#hachura-supressao)). */
@@ -86,23 +97,29 @@ export function Mapa({ className, children, zoomInicial = 4 }: MapaProps) {
       <Pane name="imoveis" style={{ zIndex: 360 }} />
       <Pane name="divisas" style={{ zIndex: 370 }} />
       <CamadaDivisas />
+      <BuscaMapa />
       {children}
     </MapContainer>
   );
 }
 
-/** Divisas dos estados (IBGE, qualidade mínima, ~100 KB), por cima das camadas e por baixo das fazendas. */
-function CamadaDivisas() {
-  const { data } = useQuery({
+/** Malha das UFs do IBGE (qualidade mínima, ~100 KB), arquivo estático do site. */
+function useDivisas() {
+  return useQuery({
     queryKey: ["divisas-ufs"],
     queryFn: async () => {
       const r = await fetch(`${import.meta.env.BASE_URL}ufs-brasil.json`);
       if (!r.ok) throw new Error("Não foi possível carregar as divisas dos estados.");
-      return (await r.json()) as GeoJSON.FeatureCollection;
+      return (await r.json()) as GeoJSON.FeatureCollection<GeoJSON.Geometry, { codarea: string }>;
     },
     staleTime: Infinity,
     gcTime: Infinity,
   });
+}
+
+/** Divisas dos estados, por cima das camadas e por baixo das fazendas. */
+function CamadaDivisas() {
+  const { data } = useDivisas();
   if (!data) return null;
   return (
     <GeoJSON
@@ -111,6 +128,148 @@ function CamadaDivisas() {
       interactive={false}
       style={() => ({ color: "#334155", weight: 1.1, opacity: 0.75, fill: false })}
     />
+  );
+}
+
+type Destino =
+  | { tipo: "municipio"; nome: string; uf: string; lat: number; lon: number }
+  | { tipo: "uf"; sigla: string; nome: string }
+  | { tipo: "car"; codigo: string }
+  | { tipo: "coordenadas"; lat: number; lon: number };
+
+const PADRAO_CAR = /^[A-Z]{2}-\d{7}-[0-9A-Z.]+$/;
+
+/** "-21.68, -51.07", "-21,68 -51,07" ou "-21.68;-51.07" -> [lat, lon]; inverte se vier lon, lat. */
+export function lerCoordenadas(texto: string): [number, number] | null {
+  const m = texto.trim().match(/^(-?\d{1,3}(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:[.,]\d+)?)$/);
+  if (!m) return null;
+  let [a, b] = [Number(m[1].replace(",", ".")), Number(m[2].replace(",", "."))];
+  if (Math.abs(a) > 34 && Math.abs(b) <= 34) [a, b] = [b, a]; // no Brasil, |lat| ≤ 34 e |lon| ≥ 34 quase sempre
+  if (Number.isNaN(a) || Number.isNaN(b) || Math.abs(a) > 90 || Math.abs(b) > 180) return null;
+  return [a, b];
+}
+
+function rotuloDestino(d: Destino): string {
+  if (d.tipo === "municipio") return `${d.nome} · ${d.uf}`;
+  if (d.tipo === "uf") return d.nome;
+  if (d.tipo === "car") return d.codigo;
+  return `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}`;
+}
+
+/**
+ * Busca no mapa: leva até um município, um estado, um imóvel do CAR (pelo código) ou um par de coordenadas.
+ * Municípios e estados vêm de arquivos estáticos; só o CAR consulta a API.
+ */
+function BuscaMapa() {
+  const mapa = useMap();
+  const caixa = useRef<HTMLDivElement>(null);
+  const [texto, setTexto] = useState("");
+  const [usada, setUsada] = useState(false); // só baixa a lista de municípios quando alguém usa a busca
+  const [erro, setErro] = useState<string | null>(null);
+  const [destaque, setDestaque] = useState<{ ponto?: [number, number]; geometria?: GeometriaFazenda } | null>(null);
+  const { data: locais } = useLocalidades(usada);
+  const { data: divisas } = useDivisas();
+
+  // Cliques e rolagem dentro da busca não podem mexer no mapa (nem roubar o foco do campo).
+  // O teclado não precisa: o mapa só ouve as setas quando ele mesmo está focado.
+  useEffect(() => {
+    const el = caixa.current;
+    if (!el) return;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+  }, []);
+
+  const sugestoes = useMemo<Sugestao<Destino>[]>(() => {
+    const termo = texto.trim();
+    if (!termo) return [];
+    const lista: Sugestao<Destino>[] = [];
+    const coord = lerCoordenadas(termo);
+    if (coord) lista.push({ chave: "coord", rotulo: `Ir para ${coord[0]}, ${coord[1]}`, detalhe: "COORDENADAS", valor: { tipo: "coordenadas", lat: coord[0], lon: coord[1] } });
+    const codigo = termo.toUpperCase().replace(/\s/g, "");
+    if (PADRAO_CAR.test(codigo)) lista.push({ chave: "car", rotulo: codigo, detalhe: "IMÓVEL DO CAR", valor: { tipo: "car", codigo } });
+    if (!coord && !PADRAO_CAR.test(codigo)) {
+      for (const u of buscarUfs(termo)) lista.push({ chave: `uf-${u.sigla}`, rotulo: u.nome, detalhe: "ESTADO", valor: { tipo: "uf", ...u } });
+      for (const m of locais ? buscarMunicipios(locais.municipios, termo, undefined, 7) : []) {
+        lista.push({ chave: `m-${m.uf}-${m.nome}`, rotulo: m.nome, detalhe: m.uf, valor: { tipo: "municipio", ...m } });
+      }
+    }
+    return lista;
+  }, [texto, locais]);
+
+  async function irPara(d: Destino) {
+    setErro(null);
+    setTexto(rotuloDestino(d));
+    if (d.tipo === "municipio") {
+      setDestaque(null);
+      mapa.flyTo([d.lat, d.lon], 12, { duration: 0.8 });
+    } else if (d.tipo === "coordenadas") {
+      setDestaque({ ponto: [d.lat, d.lon] });
+      mapa.flyTo([d.lat, d.lon], 15, { duration: 0.8 });
+    } else if (d.tipo === "uf") {
+      setDestaque(null);
+      const codigo = Object.entries(locais?.codigoUf ?? {}).find(([, sigla]) => sigla === d.sigla)?.[0];
+      const feicao = divisas?.features.find((f) => f.properties.codarea === codigo);
+      if (feicao) mapa.flyToBounds(L.geoJSON(feicao).getBounds(), { padding: [24, 24], duration: 0.8 });
+    } else {
+      try {
+        const imovel = await api.get<ImovelDetalhe>(`/imoveis/${encodeURIComponent(d.codigo)}`);
+        setDestaque({ geometria: imovel.geometry });
+        mapa.flyToBounds(L.geoJSON(imovel.geometry as GeoJSON.Geometry).getBounds(), { padding: [40, 40], maxZoom: 16, duration: 0.8 });
+      } catch (e) {
+        setErro((e as Error).message);
+      }
+    }
+  }
+
+  return (
+    <>
+      <div ref={caixa} className="absolute top-3 left-14 z-[1000] w-[min(20rem,calc(100%-8.5rem))]">
+        <div className="relative">
+          <Search size={14} aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-slate-400" />
+          <Autocompletar<Destino>
+            valor={texto}
+            onValor={(v) => {
+              setTexto(v);
+              setErro(null);
+            }}
+            onFocus={() => setUsada(true)}
+            sugestoes={sugestoes}
+            onEscolher={(d) => void irPara(d)}
+            vazio={texto.trim().length >= 2 ? (locais ? "Nada encontrado. Tente o nome do município, a UF, um código do CAR ou coordenadas." : "Carregando municípios…") : undefined}
+            placeholder="Município, estado, CAR ou coordenadas"
+            aria-label="Buscar no mapa"
+            className="h-9 rounded-full border-slate-300 bg-white/95 pr-8 pl-8 text-[13px] shadow-sm"
+          />
+          {texto ? (
+            <button
+              type="button"
+              onClick={() => {
+                setTexto("");
+                setErro(null);
+                setDestaque(null);
+              }}
+              className="absolute top-1/2 right-2 z-10 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:text-slate-900"
+              title="Limpar busca"
+            >
+              <X size={13} aria-hidden="true" />
+              <span className="sr-only">Limpar busca</span>
+            </button>
+          ) : null}
+        </div>
+        {erro ? <p className="mt-1 rounded-md bg-white/95 px-2 py-1 text-xs text-red-700 shadow-sm">{erro}</p> : null}
+      </div>
+      {destaque?.ponto ? (
+        <CircleMarker center={destaque.ponto} radius={7} pathOptions={{ color: "#fff", weight: 2, fillColor: COR_DESTAQUE, fillOpacity: 1 }} interactive={false} />
+      ) : null}
+      {destaque?.geometria ? (
+        <GeoJSON
+          key={JSON.stringify(destaque.geometria).length}
+          data={destaque.geometria}
+          interactive={false}
+          style={() => ({ color: COR_DESTAQUE, weight: 2.5, dashArray: "6 4", fill: false })}
+        />
+      ) : null}
+    </>
   );
 }
 
