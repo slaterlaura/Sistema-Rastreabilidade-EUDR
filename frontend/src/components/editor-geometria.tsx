@@ -7,6 +7,7 @@
 
 import type { Position } from "geojson";
 import { Grid2x2, Hexagon, MapPin, Trash2, Undo2 } from "lucide-react";
+import L from "leaflet";
 import { useEffect, useMemo, useState } from "react";
 import { CircleMarker, GeoJSON, Polygon, Polyline, useMap, useMapEvents } from "react-leaflet";
 import { areaAnelHa } from "@/lib/geo";
@@ -112,6 +113,15 @@ export function CamadaDesenho({ desenho, ativo: ativoProp = true }: { desenho: E
     },
   });
 
+  // Imóvel escolhido pelo código digitado pode estar fora da tela ou pequeno demais: leva o mapa até ele.
+  // (Clicado no mapa, já está visível e com zoom de imóveis: o mapa fica onde está.)
+  const imovel = desenho.modo === "imovel" ? desenho.imovel : null;
+  useEffect(() => {
+    if (!imovel) return;
+    const limites = L.geoJSON(imovel.geometry as GeoJSON.Geometry).getBounds();
+    if (limites.isValid() && (!mapa.getBounds().contains(limites) || mapa.getZoom() < 12)) mapa.fitBounds(limites, { padding: [40, 40], maxZoom: 16 });
+  }, [mapa, imovel]);
+
   const estilo = { color: COR_DESTAQUE, weight: 2.5, dashArray: "6 4" };
   if (desenho.modo === "imovel") {
     if (!desenho.imovel) return null;
@@ -183,7 +193,7 @@ export function ControlesDesenho({ desenho, areaDeclaradaHa }: { desenho: Estado
 
       <p className="text-xs leading-relaxed text-slate-600">
         {desenho.modo === "imovel"
-          ? "Aproxime o mapa até aparecerem os contornos cinza dos imóveis do CAR e clique no imóvel da fazenda. O desenho, o código do CAR, o município e a área vêm do cadastro. O imóvel só vira fazenda sua ao salvar: aí ele é verificado no PRODES e ganha status (apta ou bloqueada)."
+          ? "Digite o código do CAR abaixo, ou aproxime o mapa até aparecerem os contornos cinza dos imóveis e clique no imóvel da fazenda. O desenho, o código do CAR, o município e a área vêm do cadastro. O imóvel só vira fazenda sua ao salvar: aí ele é verificado no PRODES e ganha status (apta ou bloqueada)."
           : desenho.modo === "poligono"
             ? "Clique no mapa contornando a área, um vértice por clique. Com três ou mais vértices o contorno fecha sozinho. Use a camada Satélite (canto do mapa) para enxergar a lavoura."
             : "Clique no centro da área. Ponto só é aceito para fazendas de até 4 ha; acima disso, desenhe o polígono."}
