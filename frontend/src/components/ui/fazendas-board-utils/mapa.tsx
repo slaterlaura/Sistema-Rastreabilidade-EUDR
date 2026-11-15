@@ -478,7 +478,7 @@ export function LegendaMapa({ comSupressao = true, comImoveis = false }: { comSu
         {comImoveis ? (
           <li className="flex items-center gap-2">
             <span aria-hidden="true" className="inline-block h-3 w-4 rounded-sm border border-slate-500" />
-            IMÓVEL DO CAR
+            IMÓVEL DO CAR (REFERÊNCIA, NÃO CADASTRADO)
           </li>
         ) : null}
       </ul>

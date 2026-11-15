@@ -53,6 +53,7 @@ O OrigemCheck faz três coisas para o exportador:
 | **PRODES** | Mapeamento anual de desmatamento do INPE. Cada polígono diz onde e em que ano houve supressão de vegetação. |
 | **Camada** | O conjunto de polígonos do PRODES carregado no banco. Cada carga gera uma **versão**. |
 | **CAR** | Cadastro Ambiental Rural; o código do imóvel rural. |
+| **Imóvel do CAR** | Contorno oficial de um imóvel rural, numa camada **de referência comum a todos** (cinza no mapa). Não tem fornecedor nem status e não entra em embarque. Só vira **fazenda** quando um exportador o escolhe em "Nova fazenda → Imóvel do CAR" e salva: aí é verificado no PRODES como qualquer fazenda. |
 | **Status da fazenda** | `apta` (pode compor embarque), `bloqueada` (sobrepõe desmatamento pós-2020) ou `pendente`. |
 | **GeoJSON** | Formato de texto para desenhos no mapa. É a "língua" que frontend e backend usam para geometrias. |
 | **SRID 4326** | O sistema de coordenadas usado em todo o sistema: longitude e latitude em graus (WGS84). |

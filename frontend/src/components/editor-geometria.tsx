@@ -183,7 +183,7 @@ export function ControlesDesenho({ desenho, areaDeclaradaHa }: { desenho: Estado
 
       <p className="text-xs leading-relaxed text-slate-600">
         {desenho.modo === "imovel"
-          ? "Aproxime o mapa até aparecerem os contornos cinza dos imóveis do CAR e clique no imóvel da fazenda. O desenho, o código do CAR, o município e a área vêm do cadastro."
+          ? "Aproxime o mapa até aparecerem os contornos cinza dos imóveis do CAR e clique no imóvel da fazenda. O desenho, o código do CAR, o município e a área vêm do cadastro. O imóvel só vira fazenda sua ao salvar: aí ele é verificado no PRODES e ganha status (apta ou bloqueada)."
           : desenho.modo === "poligono"
             ? "Clique no mapa contornando a área, um vértice por clique. Com três ou mais vértices o contorno fecha sozinho. Use a camada Satélite (canto do mapa) para enxergar a lavoura."
             : "Clique no centro da área. Ponto só é aceito para fazendas de até 4 ha; acima disso, desenhe o polígono."}

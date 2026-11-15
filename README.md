@@ -18,6 +18,10 @@ e dossiê de origem por embarque. O contexto completo e as regras de negócio es
 
 A primeira chamada depois de um tempo parado pode levar alguns segundos (a API "acorda").
 
+O login de demonstração já tem fazendas em **Adamantina (SP), Pernambuco, Maranhão e Rio Grande do Sul**, aptas e
+bloqueadas. Os contornos cinza no mapa (chip "Imóveis CAR") são só **referência**: um imóvel do CAR vira fazenda
+quando você o escolhe em "Nova fazenda → Imóvel do CAR" e salva.
+
 Telas: quadro de fazendas (lista com filtros + mapa com a supressão do PRODES hachurada), cadastro com desenho
 de polígono ou ponto, fornecedores com documentos, composição de embarque (fazendas recusadas visíveis, com o motivo),
 evidências e dossiês congelados.
@@ -44,6 +48,17 @@ python scripts/carga_prodes.py --arquivo ../data/raw/yearly_deforestation.zip --
 ```
 
 Depois, no app: **Fazendas → Reprocessar camada**. Opções: `python scripts/carga_prodes.py --help`.
+
+## Fazendas de demonstração a partir dos imóveis do CAR
+
+```bash
+cd backend
+python scripts/seed.py            # usuário demo + fazendas de Adamantina (uma vez)
+python scripts/seed_imoveis.py    # por estado (PE, MA, RS): 2 aptas + 1 bloqueada, adotadas da camada de imóveis
+python scripts/seed_imoveis.py --ufs SP,MG   # outros estados; rodar de novo não duplica
+```
+
+No Azure, rode com `DATABASE_URL="$DATABASE_URL_AZURE"` (usuário administrador; o usuário `carga` não grava fazendas).
 
 ## Testes
 
