@@ -1,7 +1,7 @@
 # Como contribuir
 
 Guia para quem vai mexer no OrigemCheck. Para entender o sistema por dentro, leia antes
-[docs/COMO-FUNCIONA.md](docs/COMO-FUNCIONA.md).
+[backend/scripts/fornecedores.md](backend/scripts/fornecedores.md).
 
 O site já está no ar. Por isso nada vai direto para a `main`: toda mudança de código passa por um **pull request (PR)**,
 os testes rodam sozinhos no GitHub e a Laura aprova. Quando o PR entra na `main`, o GitHub publica a nova versão no
