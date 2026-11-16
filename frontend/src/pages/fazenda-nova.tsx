@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { Sprout } from "lucide-react";
+import { Search, Sprout } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -19,10 +19,10 @@ import {
   Mapa,
   type EstadoCamada,
 } from "@/components/ui/fazendas-board-utils/mapa";
-import { Select } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useFazendas, useFornecedores, useInvalidarCadastro } from "@/lib/consultas";
-import type { Fazenda, ImovelDetalhe, ImovelResumo } from "@/lib/tipos";
+import type { Fazenda, ImovelDetalhe } from "@/lib/tipos";
 
 export default function PaginaNovaFazenda() {
   const navegar = useNavigate();
@@ -38,13 +38,15 @@ export default function PaginaNovaFazenda() {
   const [estadoImoveis, setEstadoImoveis] = useState<EstadoCamada | null>(null);
   const aoMudarImoveis = useCallback((e: EstadoCamada) => setEstadoImoveis(e), []);
   const [erroImovel, setErroImovel] = useState<string | null>(null);
+  const [carDigitado, setCarDigitado] = useState("");
+  const [buscandoCar, setBuscandoCar] = useState(false);
   const modoImovel = desenho.modo === "imovel";
 
   /** Adota um imóvel do CAR: o desenho e os dados cadastrais vêm da base comum. */
-  async function escolherImovel(resumo: ImovelResumo) {
+  async function escolherImovel(codigo: string) {
     setErroImovel(null);
     try {
-      const imovel = await api.get<ImovelDetalhe>(`/imoveis/${encodeURIComponent(resumo.cod_imovel)}`);
+      const imovel = await api.get<ImovelDetalhe>(`/imoveis/${encodeURIComponent(codigo)}`);
       desenho.adotar(imovel);
       const opcoes = { shouldDirty: true, shouldValidate: form.formState.isSubmitted };
       form.setValue("car_codigo", imovel.cod_imovel, opcoes);
@@ -56,6 +58,18 @@ export default function PaginaNovaFazenda() {
       }
     } catch (e) {
       setErroImovel((e as Error).message);
+    }
+  }
+
+  /** Código do CAR digitado: aceita minúsculas, espaços e pontos colados do recibo do SICAR. */
+  async function buscarCarDigitado() {
+    const codigo = carDigitado.toUpperCase().replace(/[\s.]/g, "");
+    if (!codigo) return;
+    setBuscandoCar(true);
+    try {
+      await escolherImovel(codigo);
+    } finally {
+      setBuscandoCar(false);
     }
   }
 
@@ -113,6 +127,29 @@ export default function PaginaNovaFazenda() {
                       : "Desenhe o contorno com pelo menos 3 vértices."}
                 </p>
               ) : null}
+              {modoImovel ? (
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-600">Ou digite o código do CAR:</p>
+                  <div className="flex gap-2">
+                    <Input
+                      value={carDigitado}
+                      onChange={(e) => setCarDigitado(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void buscarCarDigitado();
+                        }
+                      }}
+                      placeholder="PE-2600054-…"
+                      className="font-mono text-xs"
+                      aria-label="Código do CAR"
+                    />
+                    <Button type="button" variant="outline" onClick={() => void buscarCarDigitado()} disabled={buscandoCar || !carDigitado.trim()}>
+                      <Search size={14} aria-hidden="true" /> {buscandoCar ? "Buscando…" : "Buscar"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
               {erroImovel ? <Mensagem>{erroImovel}</Mensagem> : null}
             </div>
 
@@ -141,7 +178,7 @@ export default function PaginaNovaFazenda() {
             <CamadaImoveis
               visivel={modoImovel}
               onEstado={aoMudarImoveis}
-              onSelecionar={escolherImovel}
+              onSelecionar={(resumo) => void escolherImovel(resumo.cod_imovel)}
               selecionado={desenho.imovel?.cod_imovel ?? null}
             />
             {fazendas?.map((f) => (
@@ -149,7 +186,7 @@ export default function PaginaNovaFazenda() {
             ))}
             <CamadaDesenho desenho={desenho} />
           </Mapa>
-          <div className="pointer-events-none absolute top-3 right-16 left-14 z-[500] flex flex-wrap gap-2">
+          <div className="pointer-events-none absolute top-14 right-16 left-14 z-[500] flex flex-wrap gap-2">
             <AvisoCamada estado={estadoCamada} visivel />
             <AvisoCamada estado={estadoImoveis} visivel={modoImovel} nome="imóveis do CAR" />
           </div>

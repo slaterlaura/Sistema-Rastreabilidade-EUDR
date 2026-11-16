@@ -1,7 +1,7 @@
 # O banco de dados do OrigemCheck
 
 Guia funcional do banco: onde ele fica, como é organizado, o que cada tabela guarda, quem pode acessar e como
-consultar. Para o sistema como um todo, veja [COMO-FUNCIONA.md](COMO-FUNCIONA.md).
+consultar. Para o sistema como um todo, veja [backend/scripts/fornecedores.md](../backend/scripts/fornecedores.md).
 
 > Situação descrita: novembro de 2026. As tabelas de **imóveis do CAR** (`imovel`, `imovel_versao`) vêm da
 > migração `0002`, que está no PR `camada-imoveis`; elas existem no banco local, mas só chegam ao Azure depois do

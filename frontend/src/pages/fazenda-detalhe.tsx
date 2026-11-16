@@ -259,7 +259,7 @@ function DetalheFazenda({ fazenda }: { fazenda: Fazenda }) {
               <GeometriaFazendaMapa geometria={fazenda.geometry} status={fazenda.status} rotulo={fazenda.nome} />
             )}
           </Mapa>
-          <div className="pointer-events-none absolute top-3 right-16 left-14 z-[500] flex flex-wrap gap-2">
+          <div className="pointer-events-none absolute top-14 right-16 left-14 z-[500] flex flex-wrap gap-2">
             <AvisoCamada estado={estadoCamada} visivel />
           </div>
           <div className="pointer-events-none absolute bottom-6 left-3 z-[500] hidden sm:block">

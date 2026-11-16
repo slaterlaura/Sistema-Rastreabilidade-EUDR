@@ -182,7 +182,7 @@ function FazendasBoard({ fazendas, fornecedores = [], selecionadaInicial = null,
           ))}
         </Mapa>
 
-        <div className="pointer-events-none absolute top-3 right-16 left-14 z-[500] flex flex-wrap items-start gap-2">
+        <div className="pointer-events-none absolute top-14 right-16 left-14 z-[500] flex flex-wrap items-start gap-2">
           <button
             type="button"
             onClick={() => setSupressaoVisivel((v) => !v)}
