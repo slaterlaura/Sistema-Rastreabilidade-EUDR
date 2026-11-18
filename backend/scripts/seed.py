@@ -36,6 +36,9 @@ from app.services.verificacao import verificar_fazenda  # noqa: E402
 EMAIL = "demo@exemplo.com.br"
 SENHA = os.getenv("SEED_SENHA", "demo-origemcheck-2026")
 
+# Café de cooperativa/exportadora: especificação comercial do lote (COB, bebida, peneira)
+LOTE_DEMO = {"produto": "cafe_arabica_verde", "tipo_classificacao": "NY 2/3", "bebida": "Dura", "peneira": "17/18"}
+
 
 def _nova_fazenda(db, usuario, fornecedor, nome, geometry, **extra) -> Fazenda:
     geom, _ = validar_geometria(db, geometry, extra.get("area_declarada_ha"))
@@ -104,7 +107,8 @@ def main() -> None:
                           car_codigo="DEMO-BLOQUEADA", uf="SP")
 
         embarque = Embarque(usuario_id=usuario.id, identificacao="EMB-DEMO-001",
-                            data_embarque=date(2027, 3, 15), destino="Hamburgo, Alemanha", status="rascunho")
+                            data_embarque=date(2027, 3, 15), destino="Hamburgo, Alemanha", status="rascunho",
+                            **LOTE_DEMO, regiao_origem="Alta Paulista (SP)")
         embarque.parcelas = [
             Parcela(fazenda_id=a.id, quantidade_kg=12000),
             Parcela(fazenda_id=b.id, quantidade_kg=8500),

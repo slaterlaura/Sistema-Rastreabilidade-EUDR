@@ -162,6 +162,8 @@ Apagar a fazenda ou o fornecedor apaga junto os documentos dele.
 |---|---|
 | `identificacao` | Código do embarque; único por conta |
 | `data_embarque`, `destino` | Dados da remessa |
+| `produto` | Qual café é: chave da lista em `backend/app/produtos.py` (ex.: `cafe_arabica_verde`, código SH 0901.11). Opcional no rascunho, obrigatório para fechar |
+| `tipo_classificacao`, `bebida`, `peneira`, `regiao_origem` | Especificação de qualidade do lote (ex.: NY 2/3, dura, 17/18, Cerrado Mineiro), igual para todas as parcelas; opcionais |
 | `status` | `rascunho` (ainda dá para mudar) ou `fechado` (definitivo) |
 | `fechado_em` | Quando foi fechado |
 
@@ -275,6 +277,7 @@ em `backend/alembic/versions/`:
 | `0001_baseline` | Extensão PostGIS e todas as tabelas de cadastro e do PRODES |
 | `0002_imoveis` | `imovel_versao` e `imovel` (no PR `camada-imoveis`) |
 | `0003_prodes_calor` | `prodes_calor`, o resumo do desmatamento para o mapa de calor |
+| `0004_produto_embarque` | Produto e especificação de qualidade do embarque (colunas opcionais em `embarque`) |
 
 ```bash
 cd backend && source .venv/bin/activate

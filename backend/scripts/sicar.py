@@ -110,7 +110,8 @@ TABELAS: Dict[str, Tuple[str, str]] = {
     "fazenda": ("exportador", "geom (Polygon/MultiPolygon/Point, SRID 4326, GiST), status pendente/apta/bloqueada, "
                               "area_sobreposta_m2, verificada_em, camada_versao_id, car_codigo (único por conta)"),
     "documento": ("exportador", "arquivo anexado: dono = fornecedor OU fazenda (exatamente um), tipo, caminho_storage, sha256, validade"),
-    "embarque": ("exportador", "remessa: identificacao (única por conta), data, destino, status rascunho/fechado, fechado_em"),
+    "embarque": ("exportador", "remessa: identificacao (única por conta), data, destino, produto (café + código SH), "
+                               "especificação do lote (tipo NY, bebida, peneira, região), status rascunho/fechado, fechado_em"),
     "parcela": ("exportador", "kg de uma fazenda num embarque; quantidade_kg > 0; fazenda_id ON DELETE RESTRICT"),
     "dossie": ("exportador (mas IMUTÁVEL)", "retrato JSONB congelado + caminho_geojson + caminho_pdf; um por embarque"),
     "camada_versao": ("camada", "carimbo de cada carga do PRODES: bioma, uf, arquivo, n_feicoes, carregada_em"),
@@ -158,7 +159,7 @@ NUMEROS: Dict[str, str] = {
     "recorte do mapa": "até 3.000 feições, simplificadas, grade de 0,25°",
     "timeout Function": "3 min 30 s (host.json); conexão ao banco 10 s",
     "smoke test": "/health/db até 20 vezes a cada 15 s (~5 min)",
-    "testes": "106 funções em 13 arquivos = 112 casos; passaram em 53 s",
+    "testes": "13 arquivos, 116 casos; passaram em 55 s",
     "backup": "diário, 7 dias de retenção",
     "memória da app": "pico ~115 MB, import em 0,6 s",
     "alerta de orçamento": "US$ 50 (avisos em 80% e 100%)",
@@ -282,7 +283,8 @@ Adotar imóvel do CAR: o desenho é COPIADO para a fazenda, que passa a ter vida
 
     Topico("Fluxo: embarque, fechamento e dossiê", ["embarque", "fechar", "fechamento", "dossie", "r2", "r3", "retrato"], """
 Compor:
-1. POST /embarques -> nasce RASCUNHO.
+1. POST /embarques -> nasce RASCUNHO, com produto (lista de cafés com código SH, ex.: arábica verde 0901.11) e
+   especificação do lote (tipo NY 2/3, bebida dura, peneira 17/18, região). Produto é obrigatório para fechar.
 2. PUT /embarques/{id}/parcelas -> kg por fazenda. Cada fazenda precisa estar apta; senão 400 nomeando-a (R2).
    O site desabilita as bloqueadas, mas QUEM MANDA É O SERVIDOR (burlar a tela não adianta).
    Também recusa fazenda repetida, de outra conta, kg <= 0.
@@ -339,7 +341,7 @@ conta e lista as que mudaram de cor. Dossiês fechados NÃO mudam.
   BackendBlob (produção), escolhido por STORAGE_BACKEND.
 - JWT próprio (e não Entra ID): conta de estudante não registra apps; um login por exportador.
 - Retrato JSONB (e não só FKs): prova congelada (R3).
-- Alembic: esquema só muda por migrações (0001_baseline, 0002_imoveis, 0003_prodes_calor); banco local = Azure.
+- Alembic: esquema só muda por migrações (0001_baseline, 0002_imoveis, 0003_prodes_calor, 0004_produto_embarque); banco local = Azure.
 - Site chamando a Function direto (VITE_API_URL): SWA Free não vincula Function como back-end (só no Standard).
 - CORS só na plataforma da Function (az functionapp cors add), CORS_ORIGENS vazio no FastAPI: no Flex a plataforma
   já responde o preflight; configurar nos dois duplica o cabeçalho e o navegador recusa.
@@ -454,9 +456,9 @@ pytest em backend/tests/ contra PostGIS REAL (não simulado), porque a corretude
 conftest.py recria eudr_test e aplica migrações uma vez por sessão; esvazia tabelas antes de cada teste;
 TestClient faz requisições HTTP reais. Camadas sintéticas com áreas conhecidas -> valores exatos.
 Fixtures: client, auth (usuária A), auth_b (usuária B).
-106 funções, 13 arquivos, 112 casos; 112 passaram em 53 s (15/11/2026); alembic check sem diferenças; build ok
+13 arquivos, 116 casos; 116 passaram em 55 s (18/11/2026); alembic check sem diferenças; build ok
 (aviso de pacote JS > 500 kB).
-Arquivos: test_verificacao (21), test_embarques (12), test_documentos (7), test_arquivos_blob (6),
+Arquivos: test_verificacao (21), test_embarques (16), test_documentos (7), test_arquivos_blob (6),
 test_carga_prodes (15), test_carga_imoveis (12), test_camada (6), test_calor (7), test_imoveis (5),
 test_functions (7), test_papel_carga (3), test_pool (1), test_seed_imoveis (4).
 Defeitos que viraram teste: test_uf_por_sigla_ou_por_nome_por_extenso; test_versao_da_camada_muda_a_cada_carga

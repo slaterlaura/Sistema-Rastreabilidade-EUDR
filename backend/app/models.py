@@ -193,6 +193,13 @@ class Embarque(Base):
     identificacao: Mapped[str] = mapped_column(String(120))
     data_embarque: Mapped[date] = mapped_column(Date)
     destino: Mapped[str] = mapped_column(String(255))
+    # Produto (chave de app/produtos.py) e especificação de qualidade do lote, iguais para todas as
+    # parcelas. Opcionais no rascunho; o produto é exigido para fechar.
+    produto: Mapped[str | None] = mapped_column(String(40))
+    tipo_classificacao: Mapped[str | None] = mapped_column(String(20))
+    bebida: Mapped[str | None] = mapped_column(String(40))
+    peneira: Mapped[str | None] = mapped_column(String(20))
+    regiao_origem: Mapped[str | None] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(10), server_default="rascunho")
     fechado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

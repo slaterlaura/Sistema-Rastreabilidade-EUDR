@@ -15,11 +15,21 @@ def nova_fazenda(client, auth, fornecedor, geometry, nome="Faz", **extra):
     return r.json()
 
 
-def novo_embarque(client, auth, identificacao="EMB-001"):
+LOTE = {
+    "produto": "cafe_arabica_verde",
+    "tipo_classificacao": "NY 2/3",
+    "bebida": "Dura",
+    "peneira": "17/18",
+    "regiao_origem": "Cerrado Mineiro",
+}
+
+
+def novo_embarque(client, auth, identificacao="EMB-001", **lote):
     r = client.post(
         "/embarques",
         headers=auth,
-        json={"identificacao": identificacao, "data_embarque": "2027-02-10", "destino": "Hamburgo, DE"},
+        json={"identificacao": identificacao, "data_embarque": "2027-02-10", "destino": "Hamburgo, DE",
+              **(lote or LOTE)},
     )
     assert r.status_code == 201, r.text
     return r.json()
@@ -190,3 +200,54 @@ def test_retrato_inclui_documentos_com_hash(client, auth, fornecedor, camada):
     assert [x["tipo"] for x in p["fazenda"]["documentos"]] == ["car"]
     assert [x["tipo"] for x in p["fornecedor"]["documentos"]] == ["contrato"]
     assert len(p["fazenda"]["documentos"][0]["sha256"]) == 64
+
+
+def test_produto_e_especificacao_do_lote_vao_para_o_retrato_e_o_pdf(client, auth, fornecedor, camada):
+    from app.services.dossie import descrever_lote
+
+    e = novo_embarque(client, auth)
+    assert e["produto"] == {"codigo": "cafe_arabica_verde", "descricao": "Café arábica verde (cru, em grão)",
+                            "codigo_sh": "0901.11"}
+    assert (e["tipo_classificacao"], e["bebida"], e["peneira"], e["regiao_origem"]) == (
+        "NY 2/3", "Dura", "17/18", "Cerrado Mineiro")
+
+    f = nova_fazenda(client, auth, fornecedor, quadrado(-49.5, -21.5, 0.01))
+    client.put(f"/embarques/{e['id']}/parcelas", headers=auth, json=parcelas((f["id"], 100000)))
+    d = client.post(f"/embarques/{e['id']}/fechar", headers=auth).json()["dossie_id"]
+    retrato = client.get(f"/dossies/{d}", headers=auth).json()["retrato"]
+    assert retrato["versao_retrato"] == 2
+    assert retrato["embarque"]["produto"]["codigo_sh"] == "0901.11"
+    assert retrato["embarque"]["especificacao"]["peneira"] == "17/18"
+    assert descrever_lote(retrato["embarque"]) == (
+        "Café arábica verde (cru, em grão) (SH 0901.11)",
+        "tipo NY 2/3 · bebida dura · peneira 17/18 · origem Cerrado Mineiro",
+    )
+    geojson = json.loads(client.get(f"/dossies/{d}/geojson", headers=auth).content)
+    assert geojson["embarque"]["produto"]["codigo"] == "cafe_arabica_verde"
+
+
+def test_produto_e_exigido_para_fechar_mas_nao_no_rascunho(client, auth, fornecedor, camada):
+    e = novo_embarque(client, auth, produto=None)
+    assert e["produto"] is None and e["tipo_classificacao"] is None
+    f = nova_fazenda(client, auth, fornecedor, quadrado(-49.5, -21.5, 0.01))
+    client.put(f"/embarques/{e['id']}/parcelas", headers=auth, json=parcelas((f["id"], 500)))
+    r = client.post(f"/embarques/{e['id']}/fechar", headers=auth)
+    assert r.status_code == 400 and "produto" in r.json()["detail"]
+
+    corpo = {"identificacao": "EMB-001", "data_embarque": "2027-02-10", "destino": "Hamburgo, DE",
+             "produto": "cafe_conilon_verde", "bebida": "  "}
+    atualizado = client.put(f"/embarques/{e['id']}", headers=auth, json=corpo).json()
+    assert atualizado["produto"]["codigo"] == "cafe_conilon_verde" and atualizado["bebida"] is None
+    assert client.post(f"/embarques/{e['id']}/fechar", headers=auth).status_code == 200
+
+
+def test_produto_fora_da_lista_e_recusado(client, auth):
+    r = client.post("/embarques", headers=auth, json={"identificacao": "X", "data_embarque": "2027-02-10",
+                                                       "destino": "Hamburgo", "produto": "soja"})
+    assert r.status_code == 422 and "produto" in r.text
+
+
+def test_retrato_antigo_sem_produto_ainda_gera_texto():
+    from app.services.dossie import descrever_lote
+
+    assert descrever_lote({"identificacao": "EMB-ANTIGO"}) == ("não informado", "não informada")

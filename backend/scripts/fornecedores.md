@@ -80,7 +80,8 @@ O OrigemCheck faz três coisas para o exportador:
 | **Fazenda** | Área produtiva de um fornecedor, **com desenho no mapa**: um polígono, ou um ponto se tiver até 4 ha. É ela que é verificada e tem status. |
 | **Status da fazenda** | `apta` (pode compor embarque), `bloqueada` (sobrepõe desmatamento pós-2020 acima da tolerância) ou `pendente`. |
 | **Parcela** | Uma parte de um embarque: "X kg vieram da fazenda Y". Cada parcela vem de uma única fazenda. |
-| **Embarque** | Uma remessa para a UE, composta de parcelas. Nasce como `rascunho` e é `fechado` uma única vez. |
+| **Embarque** | Uma remessa para a UE, composta de parcelas. Nasce como `rascunho` e é `fechado` uma única vez. Declara **um produto** (ex.: café arábica verde, SH 0901.11) e **uma especificação de qualidade** do lote, iguais para todas as parcelas. |
+| **Especificação do lote** | Classificação comercial do café: tipo (COB/NY, ex.: NY 2/3), bebida (ex.: dura), peneira (ex.: 17/18) e região de origem (ex.: Cerrado Mineiro). |
 | **Dossiê** | A prova de origem de um embarque fechado: um **retrato congelado** dos dados no instante do fechamento. |
 | **PRODES** | Mapeamento anual de desmatamento do INPE. Cada polígono diz onde e em que ano houve supressão de vegetação nativa. |
 | **Camada** | Dado de referência comum a todas as contas, carregado por script (PRODES, imóveis do CAR). Cada carga gera uma **versão**. |
@@ -272,7 +273,7 @@ erDiagram
 | `fornecedor` | exportador | Produtores e cooperativas | `documento` (CPF/CNPJ, único por conta), `tipo_pessoa` PF/PJ, contato, `municipio`, `uf`, `ativo` |
 | `fazenda` | exportador | As áreas produtivas | `geom` (Polygon/MultiPolygon/Point, GiST), `status`, `area_sobreposta_m2`, `verificada_em`, `camada_versao_id`, `car_codigo` (único por conta), CCIR, NIRF, matrícula, `area_declarada_ha` |
 | `documento` | exportador | Anexos | dono = fornecedor **ou** fazenda (exatamente um), `tipo`, `validade`, `caminho_storage`, `sha256` |
-| `embarque` | exportador | Remessas | `identificacao` (única por conta), data, destino, `status` (`rascunho`/`fechado`), `fechado_em` |
+| `embarque` | exportador | Remessas | `identificacao` (única por conta), data, destino, `produto`, `tipo_classificacao`, `bebida`, `peneira`, `regiao_origem`, `status` (`rascunho`/`fechado`), `fechado_em` |
 | `parcela` | exportador | Itens do embarque | `fazenda_id` (ON DELETE RESTRICT), `quantidade_kg > 0` |
 | `dossie` | exportador, mas **imutável** | A prova | `retrato` (JSONB), caminhos do GeoJSON e do PDF; um por embarque |
 | `camada_versao` | camada | Carimbo de cada carga do PRODES | bioma, UF, arquivo, `n_feicoes`, `carregada_em` |
@@ -297,7 +298,7 @@ Uma coluna `geom` não guarda texto: guarda uma **geometria**, e o banco sabe fa
 
 - **Esquema:** só pelas migrações do Alembic, em
   [backend/alembic/versions/](../../backend/alembic/versions/): `0001_baseline`, `0002_imoveis`,
-  `0003_prodes_calor`. Para criar tudo do zero: `alembic upgrade head`. No CI, o `alembic check` falha se alguém
+  `0003_prodes_calor`, `0004_produto_embarque`. Para criar tudo do zero: `alembic upgrade head`. No CI, o `alembic check` falha se alguém
   mudou `models.py` sem gerar migração.
 - **Dados mutáveis:** só a API.
 - **Camadas:** só os scripts de carga, com o usuário de banco `carga`. Ele pode fazer
@@ -776,7 +777,13 @@ stateDiagram-v2
     end note
 ```
 
-1. **Criar:** identificação (única na conta), data, destino. O embarque nasce como rascunho.
+1. **Criar:** identificação (única na conta), data, destino, **produto** e **especificação de qualidade do lote**.
+   O embarque nasce como rascunho.
+   - O produto vem de uma lista fixa de cafés com o código SH (posição 0901 do anexo I da EUDR), definida em
+     `backend/app/produtos.py` e espelhada em `frontend/src/lib/produtos.ts`. Fora da lista, a resposta é 422.
+   - A especificação (tipo NY, bebida, peneira, região de origem) vale para todas as parcelas. A tela oferece as
+     opções da classificação comercial; o servidor aceita texto livre.
+   - Enquanto for rascunho, tudo isso pode ser editado no painel "Produto e qualidade do lote".
 2. **Compor** (`PUT /embarques/{id}/parcelas`): para cada fazenda, quantos kg. O **servidor** recusa:
    - com 400 nomeando as fazendas, qualquer uma que não esteja apta (R2);
    - fazenda repetida;
@@ -787,10 +794,11 @@ stateDiagram-v2
    adianta.
 3. **Fechar** (`POST /embarques/{id}/fechar`):
    1. trava a linha com `SELECT … FOR UPDATE`, para que dois cliques simultâneos não fechem duas vezes;
-   2. confere: é da conta? (senão 404) é rascunho? (senão 409) tem parcela? (senão 400);
+   2. confere: é da conta? (senão 404) é rascunho? (senão 409) tem parcela? tem produto? (senão 400);
    3. **revalida** que todas continuam aptas, porque uma carga nova pode ter bloqueado alguma desde a composição;
-   4. `montar_retrato()` **copia** desenhos, CAR, status, área sobreposta, data da verificação, versão da camada,
-      kg e documentos com SHA-256;
+   4. `montar_retrato()` **copia** produto (com o código SH), especificação do lote, desenhos, CAR, status, área
+      sobreposta, data da verificação, versão da camada, kg e documentos com SHA-256 (retrato versão 2; dossiês
+      antigos, versão 1, aparecem como "produto não informado");
    5. `montar_geojson()` e `montar_pdf()` (ReportLab) geram os arquivos, e `arquivos.salvar()` os grava;
    6. INSERT do dossiê, status `fechado`, `fechado_em`, COMMIT;
    7. se algo falhar no meio: ROLLBACK e os arquivos já gravados são apagados.
@@ -906,7 +914,7 @@ flowchart LR
   - `camada`: supressão sintética de 2022, com ~1 km² e área conhecida, para resultados exatos;
   - `fornecedor`;
   - o helper `quadrado(lon, lat, lado)`.
-- **Números:** 13 arquivos, 112 casos passando, `alembic check` sem diferenças.
+- **Números:** 13 arquivos, 116 casos passando, `alembic check` sem diferenças.
 - **Defeitos que viraram teste:**
   - `test_uf_por_sigla_ou_por_nome_por_extenso`;
   - `test_versao_da_camada_muda_a_cada_carga`;

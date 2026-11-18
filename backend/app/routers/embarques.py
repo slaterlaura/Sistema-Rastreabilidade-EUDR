@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import usuario_atual
 from app.database import get_db
 from app.models import Dossie, Embarque, Fazenda, Parcela, Usuario
+from app.produtos import descrever
 from app.schemas import EmbarqueIn, EmbarqueOut, ParcelaOut, ParcelasIn
 from app.services import arquivos
 from app.services.dossie import montar_geojson, montar_pdf, montar_retrato
@@ -55,6 +56,11 @@ def _saida(db: Session, embarque: Embarque) -> EmbarqueOut:
         identificacao=embarque.identificacao,
         data_embarque=embarque.data_embarque,
         destino=embarque.destino,
+        produto=descrever(embarque.produto),
+        tipo_classificacao=embarque.tipo_classificacao,
+        bebida=embarque.bebida,
+        peneira=embarque.peneira,
+        regiao_origem=embarque.regiao_origem,
         status=embarque.status,
         fechado_em=embarque.fechado_em,
         criado_em=embarque.criado_em,
@@ -170,6 +176,9 @@ def fechar(embarque_id: int, db: Session = Depends(get_db), usuario: Usuario = D
     _exigir_rascunho(embarque)
     if not embarque.parcelas:
         raise HTTPException(400, detail="Inclua ao menos uma parcela antes de fechar o embarque.")
+    if not embarque.produto:
+        # A declaração ao importador precisa descrever a mercadoria (produto e código SH)
+        raise HTTPException(400, detail="Defina o produto do embarque antes de fechar.")
 
     # R2 de novo: o status pode ter mudado depois da composição (ex.: reverificação com PRODES novo)
     validar_fazendas_aptas([p.fazenda for p in embarque.parcelas])

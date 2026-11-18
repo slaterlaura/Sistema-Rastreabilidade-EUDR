@@ -36,7 +36,7 @@ from sqlalchemy import select, text  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.models import Embarque, Fazenda, Fornecedor, Parcela, Usuario  # noqa: E402
-from scripts.seed import EMAIL, _nova_fazenda  # noqa: E402
+from scripts.seed import EMAIL, LOTE_DEMO, _nova_fazenda  # noqa: E402
 
 NOMES_UF = {"PE": "Pernambuco", "MA": "Maranhão", "RS": "Rio Grande do Sul"}
 APTAS_POR_UF = 2
@@ -182,7 +182,8 @@ def executar(argv: list[str] | None = None) -> list[Fazenda]:
             select(Embarque.id).where(Embarque.usuario_id == usuario.id, Embarque.identificacao == EMBARQUE)
         ):
             embarque = Embarque(usuario_id=usuario.id, identificacao=EMBARQUE, data_embarque=date(2027, 5, 20),
-                                destino="Roterdã, Países Baixos", status="rascunho")
+                                destino="Roterdã, Países Baixos", status="rascunho",
+                                **LOTE_DEMO, regiao_origem=", ".join(NOMES_UF.get(u, u) for u in ufs))
             embarque.parcelas = [Parcela(fazenda_id=f.id, quantidade_kg=6000) for f in aptas_embarque]
             db.add(embarque)
         db.commit()

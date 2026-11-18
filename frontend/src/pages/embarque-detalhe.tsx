@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Ban, Download, FileCheck2, Lock, Package, Save } from "lucide-react";
+import { ArrowLeft, Ban, Coffee, Download, FileCheck2, Lock, Package, Pencil, Save } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
 import { Link, useParams } from "react-router-dom";
+import { CamposDoEmbarque, embarqueParaApi, embarqueParaCampos, type CamposEmbarque } from "@/components/campos-embarque";
 import { Carregando, Dado, FaixaTitulo, Mensagem, StatusPill } from "@/components/comum";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { chaves, useEmbarque, useFazendas, useFornecedores } from "@/lib/consultas";
 import { data, dataHora, haDeM2, kg } from "@/lib/formato";
+import { textoEspecificacao, textoProduto } from "@/lib/produtos";
 import { STATUS } from "@/lib/status";
 import type { Embarque, Fazenda } from "@/lib/tipos";
 import { cn } from "@/lib/utils";
@@ -86,13 +89,89 @@ function DetalheEmbarque({ embarque }: { embarque: Embarque }) {
           ))}
         </div>
       </div>
+      <LoteEmbarque embarque={embarque} />
       {aba === "composicao" ? <Composicao embarque={embarque} /> : <Evidencias embarque={embarque} />}
     </>
   );
 }
 
-function Composicao({ embarque }: { embarque: Embarque }) {
+function useInvalidarEmbarque(id: number) {
   const queryClient = useQueryClient();
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: [...chaves.embarques, id] }),
+      queryClient.invalidateQueries({ queryKey: chaves.embarques }),
+      queryClient.invalidateQueries({ queryKey: chaves.dossies }),
+    ]);
+}
+
+/** Produto e especificação de qualidade: um só para o embarque, editável enquanto é rascunho. */
+function LoteEmbarque({ embarque }: { embarque: Embarque }) {
+  const fechado = embarque.status === "fechado";
+  const [editando, setEditando] = useState(!fechado && !embarque.produto);
+  const invalidar = useInvalidarEmbarque(embarque.id);
+  const form = useForm<CamposEmbarque>({ defaultValues: embarqueParaCampos(embarque) });
+  const salvar = useMutation({
+    mutationFn: (c: CamposEmbarque) => api.put<Embarque>(`/embarques/${embarque.id}`, embarqueParaApi(c)),
+    onSuccess: async () => {
+      await invalidar();
+      setEditando(false);
+    },
+  });
+  const especificacao = textoEspecificacao(embarque);
+
+  return (
+    <div className="mb-4 rounded-2xl border border-slate-200 bg-white">
+      <FaixaTitulo
+        icone={<Coffee size={13} aria-hidden="true" />}
+        acoes={
+          !fechado && !editando ? (
+            <Button size="sm" variant="ghost" onClick={() => setEditando(true)}>
+              <Pencil aria-hidden="true" /> Editar
+            </Button>
+          ) : null
+        }
+      >
+        PRODUTO E QUALIDADE DO LOTE
+      </FaixaTitulo>
+      {editando ? (
+        <form
+          onSubmit={form.handleSubmit((c) => salvar.mutate(c))}
+          className="space-y-3 px-5 py-4"
+          noValidate
+        >
+          <CamposDoEmbarque form={form} />
+          {salvar.error ? <Mensagem>{salvar.error.message}</Mensagem> : null}
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={salvar.isPending}>
+              <Save aria-hidden="true" /> {salvar.isPending ? "Salvando…" : "Salvar"}
+            </Button>
+            {embarque.produto ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  form.reset(embarqueParaCampos(embarque));
+                  setEditando(false);
+                }}
+              >
+                Cancelar
+              </Button>
+            ) : null}
+          </div>
+        </form>
+      ) : (
+        <dl className="grid grid-cols-1 gap-4 px-5 py-3 sm:grid-cols-[2fr_3fr]">
+          <Dado rotulo="Produto">{textoProduto(embarque.produto)}</Dado>
+          <Dado rotulo="Especificação">{especificacao || "Não informada"}</Dado>
+        </dl>
+      )}
+    </div>
+  );
+}
+
+function Composicao({ embarque }: { embarque: Embarque }) {
   const { data: fazendas, isLoading } = useFazendas();
   const { data: fornecedores } = useFornecedores();
   const nomeFornecedor = useMemo(() => new Map((fornecedores ?? []).map((f) => [f.id, f.nome])), [fornecedores]);
@@ -104,12 +183,7 @@ function Composicao({ embarque }: { embarque: Embarque }) {
   const alterado = JSON.stringify(quantidades) !== JSON.stringify(inicial);
   const total = selecionadas.reduce((s, id) => s + (Number(quantidades[id].replace(",", ".")) || 0), 0);
 
-  const invalidarEmbarque = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: [...chaves.embarques, embarque.id] }),
-      queryClient.invalidateQueries({ queryKey: chaves.embarques }),
-      queryClient.invalidateQueries({ queryKey: chaves.dossies }),
-    ]);
+  const invalidarEmbarque = useInvalidarEmbarque(embarque.id);
 
   const salvar = useMutation({
     mutationFn: () =>
@@ -217,6 +291,9 @@ function Composicao({ embarque }: { embarque: Embarque }) {
           </p>
           {salvar.error ? <Mensagem>{salvar.error.message}</Mensagem> : null}
           {fechar.error ? <Mensagem>{fechar.error.message}</Mensagem> : null}
+          {!embarque.produto && !fechado ? (
+            <Mensagem tipo="aviso">Defina o produto do embarque (acima) para poder fechar.</Mensagem>
+          ) : null}
           {incluidasNaoAptas.length && !fechado ? (
             <Mensagem tipo="aviso">
               {incluidasNaoAptas.map((f) => f.nome).join(", ")} deixou de estar apta depois de entrar no embarque. Remova para poder fechar.
@@ -231,8 +308,14 @@ function Composicao({ embarque }: { embarque: Embarque }) {
                 size="sm"
                 variant="destaque"
                 className="flex-1"
-                disabled={alterado || embarque.parcelas.length === 0 || fechar.isPending}
-                title={alterado ? "Salve a composição antes de fechar" : undefined}
+                disabled={alterado || embarque.parcelas.length === 0 || !embarque.produto || fechar.isPending}
+                title={
+                  alterado
+                    ? "Salve a composição antes de fechar"
+                    : !embarque.produto
+                      ? "Defina o produto do embarque antes de fechar"
+                      : undefined
+                }
                 onClick={() => {
                   if (
                     window.confirm(
