@@ -8,6 +8,7 @@ import { AjustarTamanho, DefinicoesHachura, Enquadrar, GeometriaFazendaMapa, Leg
 import { api } from "@/lib/api";
 import { useDossie } from "@/lib/consultas";
 import { data, dataHora, documento, ha, haDeM2, kg } from "@/lib/formato";
+import { textoEspecificacao, textoProduto } from "@/lib/produtos";
 
 export default function PaginaDossie() {
   const id = Number(useParams().id);
@@ -59,6 +60,14 @@ export default function PaginaDossie() {
           <Painel>
             <FaixaTitulo icone={<FileCheck2 size={13} aria-hidden="true" />}>EMBARQUE</FaixaTitulo>
             <dl className="grid grid-cols-2 gap-4 px-5 py-4 sm:grid-cols-3">
+              <div className="col-span-2 sm:col-span-3">
+                <Dado rotulo="Produto">{textoProduto(r.embarque.produto)}</Dado>
+              </div>
+              {r.embarque.especificacao && textoEspecificacao(r.embarque.especificacao) ? (
+                <div className="col-span-2 sm:col-span-3">
+                  <Dado rotulo="Especificação do lote">{textoEspecificacao(r.embarque.especificacao)}</Dado>
+                </div>
+              ) : null}
               <Dado rotulo="Destino">{r.embarque.destino}</Dado>
               <Dado rotulo="Data do embarque">{data(r.embarque.data_embarque)}</Dado>
               <Dado rotulo="Total">{kg(r.total_kg)}</Dado>

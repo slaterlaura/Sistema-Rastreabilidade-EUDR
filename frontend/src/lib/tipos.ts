@@ -68,11 +68,26 @@ export interface Parcela {
   observacao: string | null;
 }
 
-export interface Embarque {
+export interface Produto {
+  codigo: string;
+  descricao: string;
+  codigo_sh: string | null;
+}
+
+/** Especificação de qualidade do lote, igual para todas as parcelas do embarque. */
+export interface EspecificacaoLote {
+  tipo_classificacao: string | null;
+  bebida: string | null;
+  peneira: string | null;
+  regiao_origem: string | null;
+}
+
+export interface Embarque extends EspecificacaoLote {
   id: number;
   identificacao: string;
   data_embarque: string;
   destino: string;
+  produto: Produto | null;
   status: "rascunho" | "fechado";
   fechado_em: string | null;
   criado_em: string;
@@ -123,7 +138,15 @@ export interface Retrato {
   versao_retrato: number;
   gerado_em: string;
   exportador: { nome: string; email: string };
-  embarque: { id: number; identificacao: string; data_embarque: string; destino: string };
+  embarque: {
+    id: number;
+    identificacao: string;
+    data_embarque: string;
+    destino: string;
+    // retratos v1 (antes do produto) não têm estes campos
+    produto?: Produto | null;
+    especificacao?: EspecificacaoLote;
+  };
   criterios: { data_corte_desmatamento: string; tolerancia_m2: number; observacao: string };
   camadas_referencia: {
     id: number;

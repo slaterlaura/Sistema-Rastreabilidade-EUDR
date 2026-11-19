@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.produtos import PRODUTOS
+
 TipoDocumento = Literal["car", "ccir", "matricula", "licenca", "contrato", "outro"]
 
 
@@ -185,6 +187,25 @@ class EmbarqueIn(BaseModel):
     identificacao: str = Field(min_length=1, max_length=120)
     data_embarque: date
     destino: str = Field(min_length=2, max_length=255)
+    # Produto e especificação de qualidade do lote (iguais para todas as parcelas).
+    # Opcionais no rascunho; o produto é exigido para fechar.
+    produto: str | None = None
+    tipo_classificacao: str | None = Field(default=None, max_length=20)
+    bebida: str | None = Field(default=None, max_length=40)
+    peneira: str | None = Field(default=None, max_length=20)
+    regiao_origem: str | None = Field(default=None, max_length=120)
+
+    @field_validator("produto")
+    @classmethod
+    def _produto(cls, v):
+        if v is not None and v not in PRODUTOS:
+            raise ValueError(f"produto desconhecido; use um de: {', '.join(PRODUTOS)}")
+        return v
+
+    @field_validator("tipo_classificacao", "bebida", "peneira", "regiao_origem")
+    @classmethod
+    def _vazio_vira_nulo(cls, v):
+        return (v.strip() or None) if isinstance(v, str) else v
 
 
 class ParcelaIn(BaseModel):
@@ -206,11 +227,22 @@ class ParcelaOut(BaseModel):
     observacao: str | None
 
 
+class ProdutoOut(BaseModel):
+    codigo: str
+    descricao: str
+    codigo_sh: str | None
+
+
 class EmbarqueOut(BaseModel):
     id: int
     identificacao: str
     data_embarque: date
     destino: str
+    produto: ProdutoOut | None = None
+    tipo_classificacao: str | None = None
+    bebida: str | None = None
+    peneira: str | None = None
+    regiao_origem: str | None = None
     status: str
     fechado_em: datetime | None
     criado_em: datetime

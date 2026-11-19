@@ -3,12 +3,13 @@ import { ChevronRight, Plus, Ship } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
-import { CabecalhoPagina, Campo, Carregando, FaixaTitulo, Mensagem, Painel } from "@/components/comum";
+import { CamposDoEmbarque, embarqueParaApi, embarqueVazio, type CamposEmbarque } from "@/components/campos-embarque";
+import { CabecalhoPagina, Carregando, FaixaTitulo, Mensagem, Painel } from "@/components/comum";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { chaves, useEmbarques } from "@/lib/consultas";
 import { data, kg } from "@/lib/formato";
+import { textoEspecificacao } from "@/lib/produtos";
 import type { Embarque } from "@/lib/tipos";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
@@ -55,6 +56,16 @@ export default function PaginaEmbarques() {
                   <span className="block truncate text-xs text-slate-500">
                     {e.destino} · {e.parcelas.length} parcela(s) · {kg(e.total_kg)}
                   </span>
+                  <span className="block truncate text-xs text-slate-500">
+                    {e.produto ? (
+                      <>
+                        {e.produto.descricao}
+                        {textoEspecificacao(e) ? ` · ${textoEspecificacao(e)}` : ""}
+                      </>
+                    ) : (
+                      <span className="text-amber-700">Produto não informado</span>
+                    )}
+                  </span>
                 </span>
                 <SeloEmbarque status={e.status} />
                 <ChevronRight size={16} className="shrink-0 text-slate-400" aria-hidden="true" />
@@ -70,39 +81,22 @@ export default function PaginaEmbarques() {
   );
 }
 
-interface CamposEmbarque {
-  identificacao: string;
-  data_embarque: string;
-  destino: string;
-}
-
 function NovoEmbarque({ aoCancelar }: { aoCancelar: () => void }) {
   const navegar = useNavigate();
   const queryClient = useQueryClient();
-  const form = useForm<CamposEmbarque>();
+  const form = useForm<CamposEmbarque>({ defaultValues: embarqueVazio });
   const criar = useMutation({
-    mutationFn: (corpo: CamposEmbarque) => api.post<Embarque>("/embarques", corpo),
+    mutationFn: (campos: CamposEmbarque) => api.post<Embarque>("/embarques", embarqueParaApi(campos)),
     onSuccess: async (e) => {
       await queryClient.invalidateQueries({ queryKey: chaves.embarques });
       navegar(`/embarques/${e.id}`);
     },
   });
-  const erros = form.formState.errors;
   return (
     <Painel className="mb-4">
       <FaixaTitulo icone={<Plus size={13} aria-hidden="true" />}>NOVO EMBARQUE</FaixaTitulo>
       <form onSubmit={form.handleSubmit((c) => criar.mutate(c))} className="space-y-3 px-5 py-4" noValidate>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_170px_1fr]">
-          <Campo rotulo="Identificação" erro={erros.identificacao?.message} dica="Ex.: número do contrato ou da reserva">
-            <Input className="font-mono text-xs" {...form.register("identificacao", { required: "Informe a identificação." })} />
-          </Campo>
-          <Campo rotulo="Data do embarque" erro={erros.data_embarque?.message}>
-            <Input type="date" {...form.register("data_embarque", { required: "Informe a data." })} />
-          </Campo>
-          <Campo rotulo="Destino" erro={erros.destino?.message} dica="Porto e país na União Europeia">
-            <Input {...form.register("destino", { required: "Informe o destino." })} />
-          </Campo>
-        </div>
+        <CamposDoEmbarque form={form} />
         {criar.error ? <Mensagem>{criar.error.message}</Mensagem> : null}
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={criar.isPending}>

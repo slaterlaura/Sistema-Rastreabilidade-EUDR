@@ -110,7 +110,7 @@ def test_excluir_fornecedor_remove_blobs_dele_e_das_fazendas(client, auth, forne
 
 def test_dossie_gerado_e_baixado_pelo_blob(client, auth, fornecedor, camada, blob):
     f = client.post("/fazendas", headers=auth, json={"fornecedor_id": fornecedor["id"], "nome": "Faz", "geometry": quadrado(-49.5, -21.5, 0.01)}).json()
-    e = client.post("/embarques", headers=auth, json={"identificacao": "EMB-1", "data_embarque": "2027-01-10", "destino": "Rotterdam"}).json()
+    e = client.post("/embarques", headers=auth, json={"identificacao": "EMB-1", "data_embarque": "2027-01-10", "destino": "Rotterdam", "produto": "cafe_arabica_verde"}).json()
     client.put(f"/embarques/{e['id']}/parcelas", headers=auth, json={"parcelas": [{"fazenda_id": f["id"], "quantidade_kg": 500}]})
     d = client.post(f"/embarques/{e['id']}/fechar", headers=auth).json()["dossie_id"]
     assert sorted(k.rsplit("/", 1)[1] for k in blob.blobs) == ["dossie.geojson", "dossie.pdf"]

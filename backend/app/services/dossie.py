@@ -19,8 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import CamadaVersao, Documento, Embarque, Fazenda, Fornecedor, Parcela, Usuario
+from app.produtos import descrever
 
-VERSAO_RETRATO = 1
+VERSAO_RETRATO = 2  # 2: produto e especificação de qualidade do embarque
 
 
 def _doc_resumo(d: Documento) -> dict:
@@ -118,6 +119,13 @@ def montar_retrato(db: Session, embarque: Embarque, usuario: Usuario) -> dict:
             "identificacao": embarque.identificacao,
             "data_embarque": embarque.data_embarque.isoformat(),
             "destino": embarque.destino,
+            "produto": descrever(embarque.produto),
+            "especificacao": {
+                "tipo_classificacao": embarque.tipo_classificacao,
+                "bebida": embarque.bebida,
+                "peneira": embarque.peneira,
+                "regiao_origem": embarque.regiao_origem,
+            },
         },
         "criterios": {
             "data_corte_desmatamento": f"{settings.ano_corte}-12-31",
@@ -170,6 +178,22 @@ def montar_geojson(retrato: dict) -> dict:
     }
 
 
+def descrever_lote(embarque: dict) -> tuple[str, str]:
+    """(produto, especificação) em texto, para o PDF. Retratos v1 não têm esses campos."""
+    produto = embarque.get("produto")
+    texto_produto = "não informado"
+    if produto:
+        texto_produto = produto["descricao"] + (f" (SH {produto['codigo_sh']})" if produto.get("codigo_sh") else "")
+    esp = embarque.get("especificacao") or {}
+    partes = [
+        esp.get("tipo_classificacao") and f"tipo {esp['tipo_classificacao']}",
+        esp.get("bebida") and f"bebida {esp['bebida'].lower()}",
+        esp.get("peneira") and f"peneira {esp['peneira']}",
+        esp.get("regiao_origem") and f"origem {esp['regiao_origem']}",
+    ]
+    return texto_produto, " · ".join(p for p in partes if p) or "não informada"
+
+
 def _fmt_data(iso: str | None) -> str:
     if not iso:
         return "—"
@@ -195,6 +219,8 @@ def montar_pdf(retrato: dict) -> bytes:
     h.append(Paragraph("Dossiê de origem — EUDR", estilos["Title"]))
     h.append(Paragraph(f"Embarque <b>{emb['identificacao']}</b> · destino {emb['destino']} · "
                        f"data {datetime.fromisoformat(emb['data_embarque']).strftime('%d/%m/%Y')}", normal))
+    produto, especificacao = descrever_lote(emb)
+    h.append(Paragraph(f"Produto: <b>{produto}</b> · especificação: {especificacao}", normal))
     h.append(Paragraph(f"Exportador: {retrato['exportador']['nome']} ({retrato['exportador']['email']}) · "
                        f"gerado em {_fmt_data(retrato['gerado_em'])}", normal))
     h.append(Paragraph(f"Quantidade total: <b>{_kg(retrato['total_kg'])} kg</b> em {len(retrato['parcelas'])} parcela(s)", normal))
